@@ -382,10 +382,10 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
                               >
                                 <option value="">Select agent...</option>
                                 {teamData?.users
-                                  .filter((u) => u.id !== selectedUser.id)
+                                  .filter((u) => u.id !== selectedUser.id && u.activeTickets <= 3)
                                   .map((u) => (
                                     <option key={u.id} value={u.id}>
-                                      {u.fullName}
+                                      {u.fullName} ({u.activeTickets} active)
                                     </option>
                                   ))}
                               </select>
