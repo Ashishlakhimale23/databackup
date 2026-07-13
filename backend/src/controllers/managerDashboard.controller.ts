@@ -108,13 +108,13 @@ export const managerDashboardController = {
 
     const targetUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { departmentId: true, fullName: true },
+      select: { agentsdepartmentId: true, fullName: true },
     });
 
     
     const managerIds = manager.map(ids => ids.id)
 
-    if (!manager || !targetUser || !managerIds.includes(targetUser.departmentId) ) {
+    if (!manager || !targetUser || !targetUser.agentsdepartmentId || !managerIds.includes(targetUser.agentsdepartmentId) ) {
       throw new AppError("User is not in your department", 403);
     }
 
@@ -179,13 +179,13 @@ export const managerDashboardController = {
 
     const newAssignee = await prisma.user.findUnique({
       where: { id: newAssigneeId },
-      select: { departmentId: true, isActive: true },
+      select: { agentsdepartmentId: true, isActive: true },
     });
 
     if (!newAssignee || !newAssignee.isActive) {
       throw new AppError("New assignee not found or inactive", 400);
     }
-    if (!managerIds.includes(newAssignee.departmentId)) {
+    if (!newAssignee.agentsdepartmentId || !managerIds.includes(newAssignee.agentsdepartmentId)) {
       throw new AppError("New assignee is not in your department", 400);
     }
 
@@ -232,11 +232,11 @@ export const managerDashboardController = {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { departmentId: true, role: true },
+      select: { agentsdepartmentId: true, role: true },
     });
 
     if (!user) throw new AppError("User not found", 404);
-    if (!user.departmentId) throw new AppError("User must belong to a department first", 400);
+    if (!user.agentsdepartmentId) throw new AppError("User must belong to a department first", 400);
     if (user.role === UserRole.HOD) {
       throw new AppError("User is already a Department Manager", 400);
     }
