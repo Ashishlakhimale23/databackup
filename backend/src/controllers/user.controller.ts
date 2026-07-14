@@ -81,6 +81,23 @@ export const userController = {
   }
 },
 
+
+  // get /manageddepartments/:id
+
+  async managedDepartments(req:AuthedRequest,res:Response){
+    const dept = await prisma.department.findMany({
+      where :  {
+        managerId : req.params.id
+      },
+      select :  {
+        id : true,
+        name : true
+      }
+    })
+
+    res.json(dept)
+  },
+
   // GET /users
   async list(req: AuthedRequest, res: Response) {
     const users = await prisma.user.findMany({

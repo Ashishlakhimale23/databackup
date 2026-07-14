@@ -11,7 +11,9 @@ export const ADMIN_ROLES: UserRole[] = [UserRole.GLOBAL_ADMIN];
 
 /** Anyone who works tickets or manages the people who do. */
 export const STAFF_ROLES: UserRole[] = [
-  ...ADMIN_ROLES,
+  UserRole.CXO,
+  UserRole.HOD,
+  UserRole.GLOBAL_ADMIN,
   UserRole.AGENT,
 ];
 

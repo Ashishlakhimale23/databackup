@@ -41,7 +41,7 @@ export interface User {
   email: string;
   fullName: string;
   employeeId?: string;
-  departmentId?: string;
+  departments: string[];
   managerId?: string;
   role: UserRole;
   supportLevel?: SupportLevel;
@@ -170,9 +170,9 @@ export interface Ticket {
   tags: string[];
   createdAt: string;
   updatedAt: string;
-  requester?: { fullName: string; email: string; employeeId?: string; role?: UserRole };
+  requester?: { fullName: string; email: string; employeeId?: string; role?: UserRole,id :string };
   assignee?: { fullName: string; email: string; supportLevel?: SupportLevel };
-  department?: { name: string };
+  department?: { id:string , name: string };
   category?: { name: string; defaultSlaHours?: number };
   comments?: TicketComment[];
 }

@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../lib/database";
 import { signAuthToken } from "../utils/jwt";
 import { AppError } from "../middleware/errorHandler";
+import { includes } from "zod";
 
 /**
  * There is deliberately no public "signup" here. Per the onboarding flow
@@ -12,7 +13,15 @@ import { AppError } from "../middleware/errorHandler";
  */
 export const authService = {
   async login(email: string, password: string) {
-    const user = await prisma.user.findUnique({ where: { email } });
+   
+const user = await prisma.user.findUnique({
+  where: { email },
+  include: {
+    assignedDepartment: true,
+    managedDepartments: true,
+    coxDepartements: true,
+  },
+});
 
     // Same error for "no such user" and "wrong password" so login can't
     // be used to enumerate which emails exist in the system.
@@ -41,7 +50,7 @@ export const authService = {
 
     return {
       token,
-      user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role },
+      user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role ,departments : [...user.managedDepartments.map(dept => dept.id),...user.coxDepartements.map(dept => dept.id),user.assignedDepartment?.id]},
     };
   },
 };

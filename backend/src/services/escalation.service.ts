@@ -106,6 +106,7 @@ export const escalationService = {
    * (kept scoped to support escalation, not org escalation).
    */
   async runSlaSweep() {
+
     const breached = await prisma.ticket.findMany({
       where: {
         slaDeadline: { lt: new Date() },
@@ -118,8 +119,16 @@ export const escalationService = {
 
     const results = [];
     for (const ticket of breached) {
-      await prisma.ticket.update({ where: { id: ticket.id }, data: { slaBreached: true } });
+
+      const breachedTicket = await prisma.ticket.update({ 
+        where: { id: ticket.id }, 
+        data: { slaBreached: true },
+        select:{assignee:{select:{fullName:true}}} 
+      });
+
       try {
+
+        /*
         const escalatedBy = ticket.assigneeId ?? ticket.requesterId; // system acts "as" current owner
         const result = await this.escalate({
           ticketId: ticket.id,
@@ -127,10 +136,27 @@ export const escalationService = {
           escalatedById: escalatedBy,
           isAutomatic: true,
         });
-        if (result.ticket.assigneeId) {
-          await notificationService.sendSlaBreachWarning(result.ticket, await prisma.user.findUniqueOrThrow({ where: { id: result.ticket.assigneeId } }));
+
+        */
+        const managerAndCxo = await prisma.department.findFirst({
+          where:{id:ticket.departmentId},
+          select :  {
+            name : true,
+            manager :{select:{email:true,fullName:true}},
+            cxo : {select:{email:true,fullName:true}}
+          }
+        })
+
+        if(!managerAndCxo || !managerAndCxo.cxo?.email || !managerAndCxo.manager?.email || !breachedTicket.assignee?.fullName){
+          results.push("Manager and CXO doesn't exists for this department")
+          return results
         }
-        results.push(result);
+
+        await notificationService.sendSlaBreachWarning(ticket,{email:managerAndCxo.cxo.email,departmentName:managerAndCxo.name,assigneeName:breachedTicket.assignee?.fullName});
+        
+        await notificationService.sendSlaBreachWarning(ticket,{email:managerAndCxo.manager.email,departmentName:managerAndCxo.name,assigneeName:breachedTicket.assignee?.fullName});
+
+        results.push(`Notification has been sent to ${managerAndCxo.cxo.fullName}`);
       } catch (err) {
         // No agent available at the next level - leave it flagged as
         // breached so it shows up on dashboards even without an escalation record.

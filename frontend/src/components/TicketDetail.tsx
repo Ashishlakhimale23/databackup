@@ -74,18 +74,12 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
 } | null>(null)
   const [tat,setTat] = useState<string | null>(null)
 
-  useEffect(()=>{
-    const slar = getSlaStatus()
-    setSla(sla)
-    const tat = getTurnaroundTime()
-    setTat(tat)
-
-  },[])
-
+  
   const fetchTicketDetails = async () => {
     try {
       setError("");
       // Fetch ticket
+      console.log(currentUser.departments)
       const ticketRes = await fetch(`http://localhost:3000/tickets/${ticketId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -369,7 +363,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
 
   // Action: Resolve
   const handleResolve = async () => {
-    if (ticket && ticket.requesterId === currentUser.id){
+    if (ticket && ticket.requester?.id === currentUser.id){
       setError("You cant change the resolve your own ticket")
       return
     } 
@@ -513,7 +507,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
         {/* Action button bar */}
         <div className="flex items-center gap-2">
           {/* Reopen Ticket option for Requesters */}
-          {(!isStaff || ticket.requesterId === currentUser.id )&& ["RESOLVED", "CLOSED"].includes(ticket.status) && (
+          {(!isStaff || ticket.requester?.id === currentUser.id )&& ["RESOLVED", "CLOSED"].includes(ticket.status) && (
             <button
               onClick={()=>handleStatusChange(TicketStatus.REOPENED)}
               className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-all duration-200 cursor-pointer flex items-center gap-1.5"
@@ -522,7 +516,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
             </button>
           )}
 
-          {isStaff && ticket.requesterId !== currentUser.id && !["RESOLVED", "CLOSED"].includes(ticket.status) && (
+          {isStaff && ticket.requester?.id !== currentUser.id && !["RESOLVED", "CLOSED"].includes(ticket.status) && (
             <button
               onClick={()=>handleStatusChange(TicketStatus.RESOLVED)}
               className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-all duration-200 cursor-pointer"
@@ -532,7 +526,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
           )}
 
           {/* Quick status transitions for Staff */}
-          {isStaff && ticket.requesterId !== currentUser.id && !["RESOLVED", "CLOSED"].includes(ticket.status) && (
+          {isStaff && ticket.requester?.id !== currentUser.id && !["RESOLVED", "CLOSED"].includes(ticket.status) && (
             <div className="relative inline-block text-left">
               <select
                 value={ticket.status}
@@ -665,7 +659,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                 />
                 <div className="flex justify-between items-center">
                   {/* Internal comment toggle for staff only */}
-                  {isStaff || isdepartmentHeads && currentUser.id != ticket.requesterId? (
+                  {(isStaff || isdepartmentHeads) && currentUser.departments.includes(ticket.department?.id!) ? (
                     <label className="flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-50/50 px-2.5 py-1.5 rounded-lg border border-amber-200 cursor-pointer">
                       <input
                         type="checkbox"
@@ -968,14 +962,14 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
             </div>
 
             {/* Staff Assignment actions or locked notice */}
-            {isStaff && currentUser.id == ticket.assigneeId && (
+            {isStaff || isdepartmentHeads && currentUser.id == ticket.assigneeId? (
               ["RESOLVED", "CLOSED"].includes(ticket.status) ? (
                 <div className="p-3 flex   bg-slate-50 border border-slate-200 text-slate-500 text-xs items-center gap-2 mt-3 rounded-lg">
                   <Lock size={20} />
                   Assignment modifications are disabled as this ticket is now <strong>{ticket.status}</strong>.
                 </div>
               ) : (
-               metric.assignedTickets >= 3 && !ticket.slaBreached && !ticket.escalatedToId  ? (
+               (metric.assignedTickets >= 3 && !ticket.slaBreached) ? (
                <div className="pt-3 border-t border-slate-100  space-y-2 w-full">
                 <div className="flex w-full">
                     <button
@@ -1013,7 +1007,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                   )}
                 </div> 
               ) : (<div></div>)
-            ))}
+            )): null }
           </div>
 
           

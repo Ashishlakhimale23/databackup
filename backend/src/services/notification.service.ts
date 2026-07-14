@@ -68,14 +68,13 @@ export const notificationService = {
     });
   },
 
-  async sendSlaBreachWarning(ticket: Ticket, recipient: User) {
+  async sendSlaBreachWarning(ticket: Ticket, managerorcxoDetails: {email: string,departmentName: string,assigneeName: string}) {
     await sendMail({
-      to: recipient.email,
+      to: managerorcxoDetails.email,
       subject: `⚠ SLA breach: [${ticket.ticketNumber}] ${ticket.title}`,
       html: layout("SLA breached", `
-        <p>Ticket <b>${ticket.ticketNumber}</b> has breached its SLA deadline (${ticket.slaDeadline?.toISOString()}).</p>
-        <p>It has been automatically escalated. Please review immediately.</p>
-        <p><a href="${APP_URL}/tickets/${ticket.id}">View ticket</a></p>
+        <p>Ticket <b>${ticket.ticketNumber}</b> under the department <b>${managerorcxoDetails.departmentName}</b> has breached its SLA deadline (${ticket.slaDeadline?.toISOString()}).</p>
+        <p>This ticket is currently assigned to ${managerorcxoDetails.assigneeName}</p>
       `),
     });
   },

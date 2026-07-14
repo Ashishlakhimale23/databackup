@@ -153,6 +153,9 @@ export const invitationService = {
             },
             include: {
               categoryAssignments: true,
+              assignedDepartment: true,
+              managedDepartments: true,
+              coxDepartements: true,
             },
           });
 
@@ -192,6 +195,9 @@ export const invitationService = {
             },
             include: {
               categoryAssignments: true,
+              assignedDepartment: true,
+              managedDepartments: true,
+              coxDepartements: true,
             },
           });
 
@@ -227,6 +233,9 @@ export const invitationService = {
             },
             include: {
               categoryAssignments: true,
+              assignedDepartment: true,
+              managedDepartments: true,
+              coxDepartements: true,
             },
           });
 

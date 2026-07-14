@@ -32,7 +32,8 @@ export const authController = {
         // NOTE(added): self-registered requesters must be reviewed by a
         // GLOBAL_ADMIN before they can log in or create tickets.
         approvalStatus: "PENDING",
-      }
+      },
+      
     })
 
     res.status(201).json({

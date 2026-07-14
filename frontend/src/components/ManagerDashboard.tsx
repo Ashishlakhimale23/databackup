@@ -22,6 +22,11 @@ interface ManagerDashboardProps {
   apiFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }
 
+interface managerDepartments{
+  id : string,
+  name : string,
+}
+
 const API_BASE = "http://localhost:3000";
 
 export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
@@ -35,9 +40,7 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
   const requestFn = apiFetch || window.fetch;
 
   // Manager managed departments (could be from currentUser.departments or all departments if manager has cross-dept access)
-  const managedDepartments = currentUser.departments && currentUser.departments.length > 0
-    ? currentUser.departments
-    : departments;
+  const [managedDepartments,setManagedDepartments] = useState<managerDepartments[]>([])
 
   const [selectedDeptId, setSelectedDeptId] = useState<string>(
     managedDepartments[0]?.id || currentUser.departmentId || ""
@@ -52,6 +55,27 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
   const [reassignTarget, setReassignTarget] = useState<string>("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+
+
+
+  const fetchManagerDepartments = async () => {
+
+    try{
+        const res = await fetch(`http://localhost:3000/users/manageddepartments/${currentUser.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setManagedDepartments(data);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error || "Failed to load team data");
+      }
+
+
+    }catch(error){}
+  }
 
   const fetchTeam = async (deptId?: string) => {
     setLoading(true);
@@ -130,6 +154,7 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
 
   useEffect(() => {
     fetchTeam(selectedDeptId);
+    fetchManagerDepartments()
   }, [selectedDeptId, token]);
 
   const totalTeamTickets = teamData?.users.reduce((sum, u) => sum + u.activeTickets, 0) || 0;

@@ -12,6 +12,7 @@ import { AppError } from "../middleware/errorHandler";
 import { hoursFromNow } from "../utils/time";
 import { prismaVersion } from "../generated/prisma/internal/prismaNamespace";
 import { notificationService } from "../services/notification.service";
+import { id } from "zod/v4/locales";
 
 // Roles whose "list" view is scoped to just their department, rather
 // than being requester-only (see below) or company-wide (GLOBAL_ADMIN).
@@ -328,10 +329,10 @@ export const ticketController = {
   async getById(req: AuthedRequest, res: Response) {
     const ticket = await prisma.ticket.findUniqueOrThrow({
       where: { id: req.params.id },
-      include: {
+       include: {
         assignee: true,
-        department : {select : {name :true}},
-        requester: true,
+        department : {select : {id : true,name :true}},
+        requester: {select : {id : true,fullName:true,email:true}},
         category: true,
         keywords: { include: { keyword: true } },
         escalationHistory: { include: { escalatedBy: true, escalatedTo: true }, orderBy: { createdAt: "asc" } },
