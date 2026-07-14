@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 
 
 // Fixed test password for the seeded admin account.
-const TEST_PASSWORD = "ChangeMe123!";
+const TEST_PASSWORD = "12345";
 
 
 // client list 

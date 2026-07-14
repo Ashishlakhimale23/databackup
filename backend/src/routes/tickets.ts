@@ -54,7 +54,7 @@ ticketRouter.post(
 
 // status-history
 
-ticketRouter.get("/:id/status-history",requireAuth,requireRole(UserRole.GLOBAL_ADMIN),ticketController.listStatusHistory)
+ticketRouter.get("/:id/status-history",requireAuth,ticketController.listStatusHistory)
 
 // ---- manual keyword overrides ----
 

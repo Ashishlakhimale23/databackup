@@ -308,3 +308,11 @@ export interface metric {
         resolvedTickets : number,
         onhold : number
 }
+
+export const ROLES = {
+  GLOBAL_ADMIN : "GLOBAL_ADMIN",
+  HOD : "HOD",
+  AGENT : "AGENT",
+  REQUESTER : "REQUESTER",
+  CXO : "CXO"
+}

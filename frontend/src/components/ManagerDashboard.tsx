@@ -11,7 +11,7 @@ import {
   X,
   Building2,
 } from "lucide-react";
-import { DepartmentTeam, DepartmentTeamMember, Ticket as TicketType, Department } from "../types";
+import { DepartmentTeam, DepartmentTeamMember, Ticket as TicketType, Department, PAGES } from "../types";
 
 interface ManagerDashboardProps {
   token: string;
@@ -315,7 +315,7 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
                           className="flex-1 cursor-pointer"
                           onClick={() => {
                             setSelectedTicketId(t.id);
-                            setCurrentView("ticket-detail");
+                            setCurrentView(PAGES.TICKET_DETAILS);
                           }}
                         >
                           <div className="flex items-center gap-2">

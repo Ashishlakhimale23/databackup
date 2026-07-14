@@ -17,7 +17,7 @@ import {
   Info,
   Tablet
 } from "lucide-react";
-import { Ticket, Comment, Attachment, Escalation, Keyword, User as UserType, TicketStatus, TicketPriority, SupportLevel, TicketStatusHistory, PAGES } from "../types";
+import { Ticket, Comment, Attachment, Escalation, Keyword, User as UserType, TicketStatus, TicketPriority, SupportLevel, TicketStatusHistory, PAGES, UserRole,ROLES } from "../types";
 import { userInfo } from "os";
 interface metric {
         openTickets : number
@@ -124,7 +124,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
       }
 
       // Fetch status histories if GLOBAL_ADMIN
-      if (currentUser.role === "GLOBAL_ADMIN") {
+    
         const statusHistRes = await fetch(`http://localhost:3000/tickets/${ticketId}/status-history`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -132,7 +132,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
           const statusHistData = await statusHistRes.json();
           setStatusHistories(statusHistData);
         }
-      }
+      
 
       // Fetch agents in the department for manual assignment
       if (isStaff && ticketRes) {
@@ -665,7 +665,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                 />
                 <div className="flex justify-between items-center">
                   {/* Internal comment toggle for staff only */}
-                  {isStaff  && currentUser.id != ticket.requesterId? (
+                  {isStaff || isdepartmentHeads && currentUser.id != ticket.requesterId? (
                     <label className="flex items-center gap-2 text-xs font-medium text-amber-700 bg-amber-50/50 px-2.5 py-1.5 rounded-lg border border-amber-200 cursor-pointer">
                       <input
                         type="checkbox"
@@ -791,8 +791,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
             )}
           </div>
 
-          {/* VIEW: TICKET STATUS HISTORY (GLOBAL ADMIN ONLY) */}
-          {isdepartmentHeads && (
+          {/* VIEW: TICKET STATUS HISTORY (Everyone) */}
             <div className="bg-white border border-slate-200/80 shadow-sm rounded-2xl p-6">
               <h2 className="text-sm font-semibold text-slate-900 uppercase tracking-wider mb-4 flex items-center gap-2 border-b border-slate-100 pb-2">
                 <Clock size={16} className="text-slate-500" />
@@ -861,7 +860,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                 </div>
               )}
             </div>
-          )}
+        
         </div>
 
         {/* Sidebar: Metadata and Assignments Panel */}
