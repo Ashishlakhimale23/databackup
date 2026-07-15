@@ -10,6 +10,7 @@ import {
   RotateCcw,
   X,
   Building2,
+  ArrowUpCircle,
 } from "lucide-react";
 import { DepartmentTeam, DepartmentTeamMember, Ticket as TicketType, Department, PAGES } from "../types";
 
@@ -28,6 +29,13 @@ interface managerDepartments{
 }
 
 const API_BASE = "http://localhost:3000";
+
+const CARD_LABELS: Record<"active" | "resolved" | "breached" | "escalated", string> = {
+  active: "Active",
+  resolved: "Resolved",
+  breached: "SLA Breached",
+  escalated: "Escalated",
+};
 
 export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
   token,
@@ -49,6 +57,8 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
   const [teamData, setTeamData] = useState<DepartmentTeam | null>(null);
   const [selectedUser, setSelectedUser] = useState<DepartmentTeamMember | null>(null);
   const [userTickets, setUserTickets] = useState<TicketType[]>([]);
+  const [activeCard, setActiveCard] = useState<"active" | "resolved" | "breached" | "escalated" | null>(null);
+  const [cardTickets, setCardTickets] = useState<TicketType[]>([]);
   const [loading, setLoading] = useState(true);
   const [ticketLoading, setTicketLoading] = useState(false);
   const [showReassign, setShowReassign] = useState<string | null>(null);
@@ -106,6 +116,7 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
   const fetchUserTickets = async (userId: string) => {
     setTicketLoading(true);
     setShowReassign(null);
+    setActiveCard(null);
     try {
       const res = await requestFn(`${API_BASE}/manager-dashboard/user/${userId}/tickets`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -119,6 +130,33 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
       }
     } catch {
       setError("Failed to load user tickets");
+    } finally {
+      setTicketLoading(false);
+    }
+  };
+
+  const fetchCardTickets = async (filter: "active" | "resolved" | "breached" | "escalated") => {
+    setTicketLoading(true);
+    setShowReassign(null);
+    setSelectedUser(null);
+    setActiveCard(filter);
+    try {
+      const targetDept = selectedDeptId;
+      const url = `${API_BASE}/manager-dashboard/tickets?filter=${filter}${
+        targetDept ? `&departmentId=${targetDept}` : ""
+      }`;
+      const res = await requestFn(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCardTickets(data.tickets || []);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setError(err.error || "Failed to load tickets");
+      }
+    } catch {
+      setError("Failed to load tickets");
     } finally {
       setTicketLoading(false);
     }
@@ -142,6 +180,7 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
         setShowReassign(null);
         setReassignTarget("");
         if (selectedUser) fetchUserTickets(selectedUser.id);
+        if (activeCard) fetchCardTickets(activeCard);
         fetchTeam();
       } else {
         const err = await res.json().catch(() => ({}));
@@ -160,6 +199,8 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
   const totalTeamTickets = teamData?.users.reduce((sum, u) => sum + u.activeTickets, 0) || 0;
   const totalBreached = teamData?.users.reduce((sum, u) => sum + u.breachedTickets, 0) || 0;
   const totalResolved = teamData?.users.reduce((sum, u) => sum + u.resolvedTickets, 0) || 0;
+  const totalEscalated = teamData?.users.reduce((sum, u) => sum + u.escalatedTickets, 0) || 0;
+  const displayedTickets = selectedUser ? userTickets : cardTickets;
 
   return (
     <div className="space-y-6 font-sans">
@@ -186,6 +227,8 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
                   setSelectedDeptId(e.target.value);
                   setSelectedUser(null);
                   setUserTickets([]);
+                  setActiveCard(null);
+                  setCardTickets([]);
                 }}
                 className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
               >
@@ -207,23 +250,53 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-6">
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 mt-6">
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
             <span className="text-xs text-slate-400 uppercase font-mono font-bold tracking-wider">Team Members</span>
             <h2 className="text-2xl font-extrabold text-slate-900 mt-1">{teamData?.users.length || 0}</h2>
           </div>
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <button
+            type="button"
+            onClick={() => fetchCardTickets("active")}
+            className={`text-left bg-slate-50 border rounded-xl p-4 cursor-pointer transition-all hover:bg-slate-100 hover:border-slate-300 ${
+              activeCard === "active" ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200"
+            }`}
+          >
             <span className="text-xs text-slate-400 uppercase font-mono font-bold tracking-wider">Active Tickets</span>
             <h2 className="text-2xl font-extrabold text-slate-900 mt-1">{totalTeamTickets}</h2>
-          </div>
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          </button>
+          <button
+            type="button"
+            onClick={() => fetchCardTickets("resolved")}
+            className={`text-left bg-slate-50 border rounded-xl p-4 cursor-pointer transition-all hover:bg-slate-100 hover:border-slate-300 ${
+              activeCard === "resolved" ? "border-emerald-600 ring-1 ring-emerald-600" : "border-slate-200"
+            }`}
+          >
             <span className="text-xs text-slate-400 uppercase font-mono font-bold tracking-wider">Resolved</span>
             <h2 className="text-2xl font-extrabold text-emerald-600 mt-1">{totalResolved}</h2>
-          </div>
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          </button>
+          <button
+            type="button"
+            onClick={() => fetchCardTickets("breached")}
+            className={`text-left bg-slate-50 border rounded-xl p-4 cursor-pointer transition-all hover:bg-slate-100 hover:border-slate-300 ${
+              activeCard === "breached" ? "border-rose-600 ring-1 ring-rose-600" : "border-slate-200"
+            }`}
+          >
             <span className="text-xs text-slate-400 uppercase font-mono font-bold tracking-wider">SLA Breached</span>
             <h2 className="text-2xl font-extrabold text-rose-600 mt-1">{totalBreached}</h2>
-          </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => fetchCardTickets("escalated")}
+            className={`text-left bg-slate-50 border rounded-xl p-4 cursor-pointer transition-all hover:bg-slate-100 hover:border-slate-300 ${
+              activeCard === "escalated" ? "border-amber-600 ring-1 ring-amber-600" : "border-slate-200"
+            }`}
+          >
+            <span className="text-xs text-slate-400 uppercase font-mono font-bold tracking-wider flex items-center gap-1">
+              <ArrowUpCircle size={12} /> Escalated
+            </span>
+            <h2 className="text-2xl font-extrabold text-amber-600 mt-1">{totalEscalated}</h2>
+          </button>
         </div>
       </div>
 
@@ -306,13 +379,19 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
               <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
                 <h2 className="text-xs font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2">
                   <Ticket size={14} />{" "}
-                  {selectedUser ? `${selectedUser.fullName}'s Tickets` : "Select a team member"}
+                  {selectedUser
+                    ? `${selectedUser.fullName}'s Tickets`
+                    : activeCard
+                      ? `${CARD_LABELS[activeCard]} Tickets`
+                      : "Select a team member or a card above"}
                 </h2>
-                {selectedUser && (
+                {(selectedUser || activeCard) && (
                   <button
                     onClick={() => {
                       setSelectedUser(null);
                       setUserTickets([]);
+                      setActiveCard(null);
+                      setCardTickets([]);
                     }}
                     className="text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
@@ -323,17 +402,17 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
 
               {ticketLoading ? (
                 <div className="p-8 text-center text-sm text-slate-400">Loading tickets...</div>
-              ) : !selectedUser ? (
+              ) : !selectedUser && !activeCard ? (
                 <div className="p-12 text-center text-sm text-slate-400 italic">
-                  Select a team member from the left panel to view their tickets
+                  Select a team member from the left panel, or a card above, to view tickets
                 </div>
-              ) : userTickets.length === 0 ? (
+              ) : displayedTickets.length === 0 ? (
                 <div className="p-12 text-center text-sm text-slate-400 italic">
-                  No tickets found for this user
+                  No tickets found
                 </div>
               ) : (
                 <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
-                  {userTickets.map((t) => (
+                  {displayedTickets.map((t) => (
                     <div key={t.id} className="p-4 hover:bg-slate-50/50 transition-colors">
                       <div className="flex items-start justify-between gap-4">
                         <div
@@ -407,7 +486,12 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
                               >
                                 <option value="">Select agent...</option>
                                 {teamData?.users
-                                  .filter((u) => u.id !== selectedUser.id && u.activeTickets <= 3)
+                                  .filter(
+                                    (u) =>
+                                      u.id !== t.assigneeId &&
+                                      u.activeTickets <= 3 &&
+                                      u.id !== t.requesterId
+                                  )
                                   .map((u) => (
                                     <option key={u.id} value={u.id}>
                                       {u.fullName} ({u.activeTickets} active)
@@ -456,3 +540,4 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
 };
 
 export default ManagerDashboard;
+

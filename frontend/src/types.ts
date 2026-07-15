@@ -255,6 +255,7 @@ export interface DepartmentTeamMember {
   inProgressTickets: number;
   resolvedTickets: number;
   breachedTickets: number;
+  escalatedTickets: number;
   departmentId?: string;
   departmentName?: string;
 }
