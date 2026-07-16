@@ -11,6 +11,7 @@ import {
   X,
   Building2,
   ArrowUpCircle,
+  PauseCircle,
 } from "lucide-react";
 import { DepartmentTeam, DepartmentTeamMember, Ticket as TicketType, Department, PAGES } from "../types";
 
@@ -30,11 +31,12 @@ interface managerDepartments{
 
 const API_BASE = "http://localhost:3000";
 
-const CARD_LABELS: Record<"active" | "resolved" | "breached" | "escalated", string> = {
+const CARD_LABELS: Record<"active" | "resolved" | "breached" | "escalated" | "onHold", string> = {
   active: "Active",
   resolved: "Resolved",
   breached: "SLA Breached",
   escalated: "Escalated",
+  onHold: "On Hold",
 };
 
 export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
@@ -57,7 +59,7 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
   const [teamData, setTeamData] = useState<DepartmentTeam | null>(null);
   const [selectedUser, setSelectedUser] = useState<DepartmentTeamMember | null>(null);
   const [userTickets, setUserTickets] = useState<TicketType[]>([]);
-  const [activeCard, setActiveCard] = useState<"active" | "resolved" | "breached" | "escalated" | null>(null);
+  const [activeCard, setActiveCard] = useState<"active" | "resolved" | "breached" | "escalated" | "onHold" | null>(null);
   const [cardTickets, setCardTickets] = useState<TicketType[]>([]);
   const [loading, setLoading] = useState(true);
   const [ticketLoading, setTicketLoading] = useState(false);
@@ -135,7 +137,7 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
     }
   };
 
-  const fetchCardTickets = async (filter: "active" | "resolved" | "breached" | "escalated") => {
+  const fetchCardTickets = async (filter: "active" | "resolved" | "breached" | "escalated" | "onHold") => {
     setTicketLoading(true);
     setShowReassign(null);
     setSelectedUser(null);
@@ -200,6 +202,7 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
   const totalBreached = teamData?.users.reduce((sum, u) => sum + u.breachedTickets, 0) || 0;
   const totalResolved = teamData?.users.reduce((sum, u) => sum + u.resolvedTickets, 0) || 0;
   const totalEscalated = teamData?.users.reduce((sum, u) => sum + u.escalatedTickets, 0) || 0;
+  const totalOnHold = teamData?.users.reduce((sum, u) => sum + u.onHoldTickets, 0) || 0;
   const displayedTickets = selectedUser ? userTickets : cardTickets;
 
   return (
@@ -250,7 +253,7 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-5 gap-4 mt-6">
+        <div className="grid grid-cols-1 sm:grid-cols-6 gap-4 mt-6">
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
             <span className="text-xs text-slate-400 uppercase font-mono font-bold tracking-wider">Team Members</span>
             <h2 className="text-2xl font-extrabold text-slate-900 mt-1">{teamData?.users.length || 0}</h2>
@@ -274,6 +277,18 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
           >
             <span className="text-xs text-slate-400 uppercase font-mono font-bold tracking-wider">Resolved</span>
             <h2 className="text-2xl font-extrabold text-emerald-600 mt-1">{totalResolved}</h2>
+          </button>
+          <button
+            type="button"
+            onClick={() => fetchCardTickets("onHold")}
+            className={`text-left bg-slate-50 border rounded-xl p-4 cursor-pointer transition-all hover:bg-slate-100 hover:border-slate-300 ${
+              activeCard === "onHold" ? "border-orange-600 ring-1 ring-orange-600" : "border-slate-200"
+            }`}
+          >
+            <span className="text-xs text-slate-400 uppercase font-mono font-bold tracking-wider flex items-center gap-1">
+              <PauseCircle size={12} /> On Hold
+            </span>
+            <h2 className="text-2xl font-extrabold text-orange-600 mt-1">{totalOnHold}</h2>
           </button>
           <button
             type="button"
@@ -361,6 +376,11 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
                         <span className="flex items-center gap-1">
                           <User size={10} /> {member.inProgressTickets} in-progress
                         </span>
+                        {member.onHoldTickets > 0 && (
+                          <span className="flex items-center gap-1 text-orange-600 font-semibold">
+                            <PauseCircle size={10} /> {member.onHoldTickets} on-hold
+                          </span>
+                        )}
                         {member.breachedTickets > 0 && (
                           <span className="flex items-center gap-1 text-rose-600 font-semibold">
                             <AlertTriangle size={10} /> {member.breachedTickets} breached
@@ -432,9 +452,11 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
                                   ? "bg-blue-50 text-blue-700 border-blue-100"
                                   : t.status === "IN_PROGRESS"
                                     ? "bg-indigo-50 text-indigo-700 border-indigo-100"
-                                    : t.status === "PENDING"
-                                      ? "bg-amber-50 text-amber-700 border-amber-100"
-                                      : "bg-emerald-50 text-emerald-700 border-emerald-100"
+                                    : t.status === "ON_HOLD"
+                                      ? "bg-orange-50 text-orange-700 border-orange-100"
+                                      : t.status === "PENDING"
+                                        ? "bg-amber-50 text-amber-700 border-amber-100"
+                                        : "bg-emerald-50 text-emerald-700 border-emerald-100"
                               }`}
                             >
                               {t.status}
@@ -540,4 +562,5 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
 };
 
 export default ManagerDashboard;
+
 

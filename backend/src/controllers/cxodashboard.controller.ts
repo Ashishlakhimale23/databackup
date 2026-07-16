@@ -64,7 +64,7 @@ export const cxoDashboardController = {
 
     const usersWithTickets = await Promise.all(
       users.map(async (u) => {
-        const [activeTickets, totalRequested, openCount, inProgressCount, resolvedCount, breachedCount, escalatedCount] =
+        const [activeTickets, totalRequested, openCount, inProgressCount, resolvedCount, onHoldCount, breachedCount, escalatedCount] =
           await Promise.all([
             prisma.ticket.count({
               where: { assigneeId: u.id, status: { not: "RESOLVED" } },
@@ -80,6 +80,9 @@ export const cxoDashboardController = {
             }),
             prisma.ticket.count({
               where: { assigneeId: u.id, status: "RESOLVED" },
+            }),
+            prisma.ticket.count({
+              where: { assigneeId: u.id, status: "ON_HOLD" },
             }),
             prisma.ticket.count({
               where: { assigneeId: u.id, slaBreached: true, status: { not: "RESOLVED" } },
@@ -102,6 +105,7 @@ export const cxoDashboardController = {
           openTickets: openCount,
           inProgressTickets: inProgressCount,
           resolvedTickets: resolvedCount,
+          onHoldTickets: onHoldCount,
           breachedTickets: breachedCount,
           escalatedTickets: escalatedCount,
         };
@@ -151,6 +155,8 @@ export const cxoDashboardController = {
     } else if (filter === "escalated") {
       where.escalatedToId = { not: null };
       where.status = { not: "RESOLVED" };
+    } else if (filter === "onHold") {
+      where.status = "ON_HOLD";
     }
 
     const tickets = await prisma.ticket.findMany({
@@ -201,7 +207,7 @@ export const cxoDashboardController = {
 
     const tickets = await prisma.ticket.findMany({
       where: {
-        OR: [{ assigneeId: userId }, { requesterId: userId }],
+        OR: [{ assigneeId: userId }],
         departmentId: { in: cxoDeptIds },
       },
       include: {

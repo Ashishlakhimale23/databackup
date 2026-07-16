@@ -57,6 +57,11 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
   // Escalation form
   const [showEscalateForm, setShowEscalateForm] = useState(false);
   const [escalateReason, setEscalateReason] = useState("");
+  // A comment is required whenever a ticket is put ON-HOLD, so the status
+  // select doesn't fire the PATCH immediately for that option - it opens
+  // this small inline form first and submits both together.
+  const [showHoldCommentForm, setShowHoldCommentForm] = useState(false);
+  const [holdComment, setHoldComment] = useState("");
   const [escalateLevel, setEscalateLevel] = useState<string>("");
 
   // Assign agent form
@@ -288,7 +293,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
   };
 
   // Action: Change Status
-  const handleStatusChange = async (newStatus: TicketStatus) => {
+  const handleStatusChange = async (newStatus: TicketStatus, comment?: string) => {
     
     setError("");
     setSuccess("");
@@ -299,7 +304,11 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ status: newStatus,turnOverTime:getTurnaroundTime().seconds })
+        body: JSON.stringify({
+          status: newStatus,
+          turnOverTime: getTurnaroundTime().seconds,
+          ...(comment && comment.trim() ? { comment: comment.trim() } : {})
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to update status");
@@ -318,11 +327,20 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
         })
       });
 
+      setShowHoldCommentForm(false);
+      setHoldComment("");
       fetchTicketDetails();
       setSuccess(`Status changed to ${newStatus}.`);
     } catch (err: any) {
       setError(err.message);
     }
+  };
+
+  // Action: Submit the ON-HOLD comment form (comment is mandatory here)
+  const handleHoldSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!holdComment.trim()) return;
+    handleStatusChange(TicketStatus.ON_HOLD, holdComment);
   };
 
   // Action: Change Priority (Admin Override)
@@ -531,13 +549,60 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
             <div className="relative inline-block text-left">
               <select
                 value={ticket.status}
-                onChange={(e) => handleStatusChange(e.target.value as TicketStatus)}
+                onChange={(e) => {
+                  const nextStatus = e.target.value as TicketStatus;
+                  if (nextStatus === "ON_HOLD") {
+                    // Comment is mandatory for ON-HOLD - collect it first
+                    // instead of patching the status right away.
+                    setShowHoldCommentForm(true);
+                    return;
+                  }
+                  handleStatusChange(nextStatus);
+                }}
                 className="text-xs bg-white border border-slate-200 rounded-lg px-3 py-2 font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 shadow-xs cursor-pointer transition-all duration-200"
               >
                 <option value="OPEN">OPEN</option>
                 <option value="IN_PROGRESS">IN PROGRESS</option>
                 <option value="ON_HOLD">ON-HOLD</option>
               </select>
+
+              {showHoldCommentForm && (
+                <form
+                  onSubmit={handleHoldSubmit}
+                  className="absolute right-0 mt-2 w-72 bg-white border border-zinc-200 shadow-lg rounded-lg p-3 space-y-2 z-10"
+                >
+                  <label className="block text-[10px] font-mono font-bold uppercase text-zinc-600">
+                    Comment required to place ON-HOLD
+                  </label>
+                  <textarea
+                    autoFocus
+                    placeholder="Why is this ticket being put on hold?"
+                    value={holdComment}
+                    onChange={(e) => setHoldComment(e.target.value)}
+                    className="w-full text-xs p-2 border border-zinc-300 bg-white rounded"
+                    rows={3}
+                    required
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="submit"
+                      className="flex-1 bg-[#032d26] hover:bg-[#021f1a] text-white text-xs py-1.5 font-semibold cursor-pointer rounded"
+                    >
+                      Confirm Hold
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowHoldCommentForm(false);
+                        setHoldComment("");
+                      }}
+                      className="flex-1 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs py-1.5 font-semibold cursor-pointer rounded"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           )}
         </div>
@@ -1053,9 +1118,12 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                 </form>
               )}
 
-              {/* History Timeline */}
-              {/*
-              {escalations.length > 0 && (
+              
+            </div>
+          )}
+          
+          {/* History Timeline */}
+          {escalations.length > 0 && (
                 <div className="pt-3 border-t border-zinc-100 space-y-3">
                   <span className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider block">Escalation History</span>
                   <div className="space-y-3.5 pl-2 border-l border-zinc-200">
@@ -1070,15 +1138,16 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                         </div>
                         <p className="text-zinc-700 font-medium mt-0.5">{esc.reason}</p>
                         <span className="text-[10px] text-zinc-400 font-mono block">
-                          Escalated by: {esc.escalatedByName || "System"} to {esc.escalatedToName}
+                          Escalated by: {esc.escalatedBy?.fullName || "System"} 
+                        </span>
+                        <span className="text-[10px] text-zinc-400 font-mono block">
+                          Escalated To: {esc.escalatedTo?.fullName || "System"} 
                         </span>
                       </div>
                     ))}
                   </div>
                 </div>
-              )} */ }
-            </div>
-          )}
+              )} 
 
           {/* Show escalation history even if resolved, without promote button */}
           {isdepartmentHeads && ["RESOLVED"].includes(ticket.status) && escalations.length > 0 && (
@@ -1089,9 +1158,6 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                   <div key={esc.id} className="text-[11px] relative">
                     <span className="absolute -left-[13px] top-1 w-2.5 h-2.5 bg-slate-400 rounded-full border-2 border-white" />
                     <div className="font-mono text-zinc-500 flex justify-between">
-                      <span>
-                        Tier: <strong className="text-slate-700">{esc.fromLevel || "L1"} → {esc.toLevel}</strong>
-                      </span>
                       <span>{new Date(esc.createdAt).toLocaleDateString()}</span>
                     </div>
                     <p className="text-zinc-700 font-medium mt-0.5">{esc.reason}</p>

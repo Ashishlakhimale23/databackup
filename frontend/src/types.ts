@@ -24,6 +24,7 @@ export enum TicketStatus {
   OPEN = "OPEN",
   IN_PROGRESS = "IN_PROGRESS",
   PENDING = "PENDING",
+  ON_HOLD = "ON_HOLD",
   RESOLVED = "RESOLVED",
   REOPENED  = "REOPENED"
 }
@@ -208,8 +209,8 @@ export interface Escalation {
   reason: string;
   isAutomatic: boolean;
   createdAt: string;
-  escalatedByName?: string;
-  escalatedToName?: string;
+  escalatedBy?: {fullName:string};
+  escalatedTo?: {fullName:string};
 }
 
 export interface AuditLog {
@@ -254,6 +255,7 @@ export interface DepartmentTeamMember {
   openTickets: number;
   inProgressTickets: number;
   resolvedTickets: number;
+  onHoldTickets: number;
   breachedTickets: number;
   escalatedTickets: number;
   departmentId?: string;

@@ -40,12 +40,20 @@ export const createTicketSchema = z.object({
   state: z.string().min(1).max(100),
 });
 
-export const updateTicketSchema = z.object({
-  title: z.string().min(1).max(300).optional(),
-  description: z.string().max(10_000).optional(),
-  tags: z.array(z.string()).optional(),
-  status: z.nativeEnum(TicketStatus).optional(),
-});
+export const updateTicketSchema = z
+  .object({
+    title: z.string().min(1).max(300).optional(),
+    description: z.string().max(10_000).optional(),
+    tags: z.array(z.string()).optional(),
+    status: z.nativeEnum(TicketStatus).optional(),
+    // Required only when status is being set to ON_HOLD - see refine below.
+    // Recorded as both the TicketStatusHistory note and a regular ticket comment.
+    comment: z.string().min(1).max(5000).optional(),
+  })
+  .refine(
+    (data) => data.status !== TicketStatus.ON_HOLD || (data.comment && data.comment.trim().length > 0),
+    { message: "A comment is required when placing a ticket on hold", path: ["comment"] }
+  );
 
 // Admin-only priority override - separate from updateTicketSchema since
 // only GLOBAL_ADMIN/DEPT_ADMIN can touch this, everyone else's PATCH
@@ -122,3 +130,4 @@ export const createAuditLogSchema = z.object({
   entityType: z.string().min(1).max(50),
   entityId: z.string().optional(),
 });
+

@@ -654,7 +654,8 @@ export default function App() {
 
   // Create Keyword
   const handleCreateKeyword = async (e: React.FormEvent) => {
-    if (!newKwName) return;
+    e.preventDefault()
+ 
     try {
 
       let synonyms = newKwSynonyms.split(",")
@@ -722,7 +723,7 @@ export default function App() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ name: term, synonyms: synonymsInput })
+        body: JSON.stringify({ name: term, synonyms: synonymsInput.split(",") })
       });
       if (res.ok) {
         handleSelectDeptConfig(selectedDeptId);

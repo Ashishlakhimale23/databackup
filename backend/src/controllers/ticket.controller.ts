@@ -355,7 +355,14 @@ export const ticketController = {
 
   //@ts-ignore
   async update(req: AuthedRequest, res: Response) {
-    const {  status,turnOverTime } = req.body;
+    const {  status,turnOverTime, comment } = req.body;
+
+    // Putting a ticket ON_HOLD requires an explanatory comment - it's
+    // recorded on the status history entry (as its note) and also added
+    // as a regular ticket comment so it shows up in the discussion thread.
+    if (status === TicketStatus.ON_HOLD && !(typeof comment === "string" && comment.trim().length > 0)) {
+      throw new AppError("A comment is required when placing a ticket on hold", 400);
+    }
 
     const previous = await prisma.ticket.findUniqueOrThrow({ where: { id: req.params.id },
       select :{
@@ -436,7 +443,21 @@ export const ticketController = {
         fromStatus: previous.status,
         toStatus: status,
         changedById: req.user!.id,
+        // ON_HOLD is required to carry a comment (validated above); other
+        // transitions may optionally include one too.
+        note: typeof comment === "string" && comment.trim().length > 0 ? comment.trim() : undefined,
       });
+
+      if (typeof comment === "string" && comment.trim().length > 0) {
+        await prisma.ticketComment.create({
+          data: {
+            ticketId: ticket.id,
+            userId: req.user!.id,
+            commentText: comment.trim(),
+            isInternal: false,
+          },
+        });
+      }
     }
 
     res.json(ticket);
@@ -539,3 +560,4 @@ export const ticketController = {
     res.status(204).send();
   },
 };
+
