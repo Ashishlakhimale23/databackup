@@ -277,7 +277,9 @@ model TicketCategory {
   id              String         @id @default(uuid())
   departmentId    String
   name            String
-  defaultSlaHours Int?
+  // NOTE(added): stored in minutes (previously hours) so category SLAs can
+  // be configured with sub-hour precision.
+  defaultSlaMinutes Int?
   
   defaultPriority TicketPriority @default(P3)
 
@@ -344,6 +346,15 @@ model Ticket {
   holdStartedAt       DateTime?
   totalHoldMinutes    Int            @default(0)
   slaRemainingMinutes Int?
+
+  // NOTE(added): the total SLA window (in minutes) currently granted to
+  // this ticket - set at creation from the category's defaultSlaMinutes
+  // (or the priority-based fallback), and refreshed whenever an admin
+  // changes the category's SLA afterwards. Together with slaDeadline /
+  // slaRemainingMinutes this lets us work out how much SLA time a ticket
+  // has already consumed, so a category SLA change can carry over
+  // consumed time instead of granting a full fresh window.
+  slaTotalMinutes     Int?
 
   metadata         Json?
   
@@ -476,4 +487,5 @@ model AdminMessage {
 
   @@index([userId, createdAt])
 }
+
 

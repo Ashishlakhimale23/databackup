@@ -76,12 +76,6 @@ export const invitationService = {
           Password: passwordHash,
           invitedById: inviter.id,
           role,
-          department:{
-            connect : {id :departmentId}
-          }, 
-          categories: {
-            connect: categoryIds.map(id => ({ id }))
-          },
           supportLevel,
           token: generateToken(),
           expiresAt: daysFromNow(INVITATION_TTL_DAYS),

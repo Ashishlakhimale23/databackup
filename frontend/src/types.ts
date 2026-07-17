@@ -106,7 +106,7 @@ export interface TicketCategory {
   id: string;
   departmentId: string;
   name: string;
-  defaultSlaHours?: number;
+  defaultSlaMinutes?: number;
   defaultPriority: TicketPriority;
 }
 
@@ -179,7 +179,7 @@ export interface Ticket {
   requester?: { fullName: string; email: string; employeeId?: string; role?: UserRole,id :string };
   assignee?: { fullName: string; email: string; supportLevel?: SupportLevel };
   department?: { id:string , name: string };
-  category?: { name: string; defaultSlaHours?: number };
+  category?: { name: string; defaultSlaMinutes?: number };
   comments?: TicketComment[];
 }
 
@@ -190,7 +190,10 @@ export interface Comment {
   commentText: string;
   isInternal: boolean;
   createdAt: string;
-  userName?: string;
+  user:{
+    fullName : string,
+    role : string,
+  } 
   userRole?: string;
 }
 

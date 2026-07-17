@@ -9,7 +9,7 @@ import { TicketPriority, TicketStatus, UserRole } from "../generated/prisma/clie
 import { isRequesterOnly } from "../utils/rbac";
 import { parsePagination, paginatedResponse } from "../utils/pagination";
 import { AppError } from "../middleware/errorHandler";
-import { hoursFromNow } from "../utils/time";
+import { minutesFromNow } from "../utils/time";
 import { computeSlaClockUpdate, computeTurnOverTimeSeconds } from "../services/slaClock.service";
 import { prismaVersion } from "../generated/prisma/internal/prismaNamespace";
 import { notificationService } from "../services/notification.service";
@@ -19,11 +19,11 @@ import { id } from "zod/v4/locales";
 // than being requester-only (see below) or company-wide (GLOBAL_ADMIN).
 const DEPARTMENT_SCOPED_ROLES: UserRole[] = [ UserRole.HOD];
 
-const BASE_SLA_HOURS_BY_PRIORITY: Record<TicketPriority, number> = {
-  P1: 4,
-  P2: 8,
-  P3: 24,
-  P4: 72,
+const BASE_SLA_MINUTES_BY_PRIORITY: Record<TicketPriority, number> = {
+  P1: 4 * 60,
+  P2: 8 * 60,
+  P3: 24 * 60,
+  P4: 72 * 60,
 };
 
 export const ticketController = {
@@ -365,6 +365,12 @@ export const ticketController = {
       throw new AppError("A comment is required when placing a ticket on hold", 400);
     }
 
+    // Resolving a ticket requires a reason too - same treatment: recorded
+    // as the status history note and as a regular ticket comment.
+    if (status === TicketStatus.RESOLVED && !(typeof comment === "string" && comment.trim().length > 0)) {
+      throw new AppError("A comment is required when resolving a ticket", 400);
+    }
+
     const previous = await prisma.ticket.findUniqueOrThrow({ where: { id: req.params.id },
       select :{
         id : true,
@@ -377,7 +383,7 @@ export const ticketController = {
         category:{
           select :{
             defaultPriority: true,
-            defaultSlaHours : true
+            defaultSlaMinutes : true
           }
         }
       }
@@ -400,7 +406,7 @@ export const ticketController = {
       // to a fresh SLA window.
       const resumedDeadline = slaClockUpdate.slaDeadline
         ?? (previous.slaRemainingMinutes == null
-          ? hoursFromNow(previous.category?.defaultSlaHours ?? BASE_SLA_HOURS_BY_PRIORITY["P3"])
+          ? minutesFromNow(previous.category?.defaultSlaMinutes ?? BASE_SLA_MINUTES_BY_PRIORITY["P3"])
           : null);
 
       const ticket = await prisma.ticket.update({
@@ -449,6 +455,17 @@ export const ticketController = {
           fromStatus: previous.status,
           toStatus: status,
           changedById: req.user!.id,
+          // Validated above - resolving always carries a reason.
+          note: comment.trim(),
+        });
+
+        await prisma.ticketComment.create({
+          data: {
+            ticketId: ticket.id,
+            userId: req.user!.id,
+            commentText: comment.trim(),
+            isInternal: false,
+          },
         });
       }
 
@@ -548,9 +565,15 @@ export const ticketController = {
     res.json(ticket);
   },
 
-  // POST /tickets/:id/resolve
+  // POST /tickets/:id/resolve  { comment }  - comment is mandatory, same
+  // reasoning as the PATCH /tickets/:id RESOLVED path: it's recorded as
+  // the status history note and added as a regular ticket comment.
   async resolve(req: AuthedRequest, res: Response) {
-    const ticket = await ticketService.resolveTicket(req.params.id, req.user!.id);
+    const { comment } = req.body;
+    if (!(typeof comment === "string" && comment.trim().length > 0)) {
+      throw new AppError("A comment is required when resolving a ticket", 400);
+    }
+    const ticket = await ticketService.resolveTicket(req.params.id, req.user!.id, comment.trim());
     res.json(ticket);
   },
 
@@ -592,5 +615,6 @@ export const ticketController = {
     res.status(204).send();
   },
 };
+
 
 

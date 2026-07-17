@@ -33,16 +33,16 @@ export const CLIENT_OPTIONS: {
 const DEPARTMENTS: Record<string,
   {
     description: string;
-    categories: { name: string; defaultSlaHours: number; defaultPriority: TicketPriority; minSupportLevel: SupportLevel }[];
+    categories: { name: string; defaultSlaMinutes: number; defaultPriority: TicketPriority; minSupportLevel: SupportLevel }[];
     keywords: { name: string; synonyms: string[] }[];
   }
 > = {
   Maintenance: {
     description: "Equipment and vehicle maintenance requests",
     categories: [
-      { name: "Breakdown", defaultSlaHours: 2, defaultPriority: TicketPriority.P1, minSupportLevel: SupportLevel.L2 },
-      { name: "Scheduled Service", defaultSlaHours: 48, defaultPriority: TicketPriority.P4, minSupportLevel: SupportLevel.L1 },
-      { name: "Parts Request", defaultSlaHours: 24, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Breakdown", defaultSlaMinutes: 120, defaultPriority: TicketPriority.P1, minSupportLevel: SupportLevel.L2 },
+      { name: "Scheduled Service", defaultSlaMinutes: 2880, defaultPriority: TicketPriority.P4, minSupportLevel: SupportLevel.L1 },
+      { name: "Parts Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
     ],
     keywords: [
       { name: "Engine", synonyms: ["engine failure", "overheating", "oil leak", "coolant"] },
@@ -55,9 +55,9 @@ const DEPARTMENTS: Record<string,
   Operations: {
     description: "Day-to-day site and project operations",
     categories: [
-      { name: "Site Issue", defaultSlaHours: 8, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
-      { name: "Scheduling Conflict", defaultSlaHours: 24, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
-      { name: "General Operations Request", defaultSlaHours: 24, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Site Issue", defaultSlaMinutes: 480, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
+      { name: "Scheduling Conflict", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "General Operations Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
     ],
     keywords: [
       { name: "Site Access", synonyms: ["gate pass", "site entry", "checkpoint"] },
@@ -69,10 +69,10 @@ const DEPARTMENTS: Record<string,
   Safety: {
     description: "Health, safety, and incident reporting",
     categories: [
-      { name: "Incident Report", defaultSlaHours: 1, defaultPriority: TicketPriority.P1, minSupportLevel: SupportLevel.L2 },
-      { name: "Near Miss", defaultSlaHours: 8, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
-      { name: "Safety Equipment Request", defaultSlaHours: 24, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
-      { name: "Compliance / Audit", defaultSlaHours: 48, defaultPriority: TicketPriority.P4, minSupportLevel: SupportLevel.L2 },
+      { name: "Incident Report", defaultSlaMinutes: 60, defaultPriority: TicketPriority.P1, minSupportLevel: SupportLevel.L2 },
+      { name: "Near Miss", defaultSlaMinutes: 480, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
+      { name: "Safety Equipment Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Compliance / Audit", defaultSlaMinutes: 2880, defaultPriority: TicketPriority.P4, minSupportLevel: SupportLevel.L2 },
     ],
     keywords: [
       { name: "Injury", synonyms: ["accident", "hurt", "medical", "first aid"] },
@@ -85,9 +85,9 @@ const DEPARTMENTS: Record<string,
   Logistics: {
     description: "Transport, delivery, and movement of equipment/materials",
     categories: [
-      { name: "Delivery Delay", defaultSlaHours: 8, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
-      { name: "Dispatch Request", defaultSlaHours: 12, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
-      { name: "General Logistics Request", defaultSlaHours: 24, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Delivery Delay", defaultSlaMinutes: 480, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
+      { name: "Dispatch Request", defaultSlaMinutes: 720, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
+      { name: "General Logistics Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
     ],
     keywords: [
       { name: "Transport", synonyms: ["trailer", "trucking", "haulage", "transport"] },
@@ -99,9 +99,9 @@ const DEPARTMENTS: Record<string,
   "Supply Chain Management (Market Hired Vehicle)": {
     description: "Procurement and management of market-hired vehicles/equipment",
     categories: [
-      { name: "Vehicle Hire Request", defaultSlaHours: 24, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
-      { name: "Vendor Issue", defaultSlaHours: 24, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
-      { name: "Contract Renewal", defaultSlaHours: 72, defaultPriority: TicketPriority.P4, minSupportLevel: SupportLevel.L2 },
+      { name: "Vehicle Hire Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Vendor Issue", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Contract Renewal", defaultSlaMinutes: 4320, defaultPriority: TicketPriority.P4, minSupportLevel: SupportLevel.L2 },
     ],
     keywords: [
       { name: "Market Hire", synonyms: ["mhv", "hired vehicle", "rental vehicle", "third-party vehicle"] },
@@ -113,9 +113,9 @@ const DEPARTMENTS: Record<string,
   "Human Resource (HR) / (Site-HR)": {
     description: "Employee and site-level HR requests",
     categories: [
-      { name: "General HR Request", defaultSlaHours: 24, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
-      { name: "Site-HR Request", defaultSlaHours: 24, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
-      { name: "Grievance", defaultSlaHours: 48, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
+      { name: "General HR Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Site-HR Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Grievance", defaultSlaMinutes: 2880, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
     ],
     keywords: [
       { name: "Payroll", synonyms: ["paycheck", "salary", "direct deposit", "payslip"] },
@@ -128,9 +128,9 @@ const DEPARTMENTS: Record<string,
   "Billing Issue": {
     description: "Invoicing, billing disputes, and payment issues",
     categories: [
-      { name: "Invoice Dispute", defaultSlaHours: 24, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
-      { name: "Payment Delay", defaultSlaHours: 24, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
-      { name: "General Billing Request", defaultSlaHours: 48, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Invoice Dispute", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
+      { name: "Payment Delay", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
+      { name: "General Billing Request", defaultSlaMinutes: 2880, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
     ],
     keywords: [
       { name: "Invoice", synonyms: ["invoice", "billing statement", "bill"] },
@@ -142,9 +142,9 @@ const DEPARTMENTS: Record<string,
   "Cross Rental Cranes (CR) - Wet lease / Dry lease": {
     description: "Cross-rental crane requests, wet lease and dry lease arrangements",
     categories: [
-      { name: "Wet Lease Request", defaultSlaHours: 12, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
-      { name: "Dry Lease Request", defaultSlaHours: 12, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
-      { name: "Crane Availability", defaultSlaHours: 8, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
+      { name: "Wet Lease Request", defaultSlaMinutes: 720, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
+      { name: "Dry Lease Request", defaultSlaMinutes: 720, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
+      { name: "Crane Availability", defaultSlaMinutes: 480, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L1 },
     ],
     keywords: [
       { name: "Wet Lease", synonyms: ["wet lease", "operator included", "crane with operator"] },
@@ -156,9 +156,9 @@ const DEPARTMENTS: Record<string,
   Sales: {
     description: "Sales inquiries, quotations, and customer requests",
     categories: [
-      { name: "Quotation Request", defaultSlaHours: 24, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
-      { name: "Customer Complaint", defaultSlaHours: 12, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
-      { name: "New Lead", defaultSlaHours: 48, defaultPriority: TicketPriority.P4, minSupportLevel: SupportLevel.L1 },
+      { name: "Quotation Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Customer Complaint", defaultSlaMinutes: 720, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
+      { name: "New Lead", defaultSlaMinutes: 2880, defaultPriority: TicketPriority.P4, minSupportLevel: SupportLevel.L1 },
     ],
     keywords: [
       { name: "Quotation", synonyms: ["quote", "estimate", "pricing"] },
@@ -192,7 +192,7 @@ async function main() {
       data: deptData.categories.map((c) => ({
         departmentId: department.id,
         name: c.name,
-        defaultSlaHours: c.defaultSlaHours,
+        defaultSlaMinutes: c.defaultSlaMinutes,
         defaultPriority: c.defaultPriority,
       })),
     });

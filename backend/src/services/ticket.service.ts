@@ -6,16 +6,16 @@ import { assignmentService } from "./assignment.service";
 import { notificationService } from "./notification.service";
 import { logStatusChange } from "./statushistory.service";
 import { Prisma, TicketPriority, SupportLevel, TicketStatus } from "../generated/prisma/client";
-import { hoursFromNow } from "../utils/time";
+import { minutesFromNow } from "../utils/time";
 
-// Baseline hours used when there's no categoryId, or the category exists
-// but was never given a defaultSlaHours. category.defaultSlaHours, when
+// Baseline minutes used when there's no categoryId, or the category exists
+// but was never given a defaultSlaMinutes. category.defaultSlaMinutes, when
 // set, overrides this baseline entirely.
-const BASE_SLA_HOURS_BY_PRIORITY: Record<TicketPriority, number> = {
-  P1: 4,
-  P2: 8,
-  P3: 24,
-  P4: 72,
+const BASE_SLA_MINUTES_BY_PRIORITY: Record<TicketPriority, number> = {
+  P1: 4 * 60,
+  P2: 8 * 60,
+  P3: 24 * 60,
+  P4: 72 * 60,
 };
 
 export const ticketService = {
@@ -80,8 +80,8 @@ export const ticketService = {
       categoryDefaultPriority: category?.defaultPriority,
     });
 
-    const baseSlaHours = category?.defaultSlaHours ?? BASE_SLA_HOURS_BY_PRIORITY[priority];
-    const slaDeadline = hoursFromNow(baseSlaHours);
+    const baseSlaMinutes = category?.defaultSlaMinutes ?? BASE_SLA_MINUTES_BY_PRIORITY[priority];
+    const slaDeadline = minutesFromNow(baseSlaMinutes);
 
     
     const ticket = await this.createTicketWithUniqueNumber({
@@ -99,6 +99,7 @@ export const ticketService = {
       priority,
       internalPriority: priority,
       slaDeadline,
+      slaTotalMinutes: baseSlaMinutes,
     });
 
     await logStatusChange({ ticketId: ticket.id, fromStatus: null, toStatus: TicketStatus.OPEN, changedById: requesterId });
@@ -121,15 +122,30 @@ export const ticketService = {
     });
   },
 
-  async resolveTicket(ticketId: string, resolvedById: string) {
+  async resolveTicket(ticketId: string, resolvedById: string, comment: string) {
     const previous = await prisma.ticket.findUniqueOrThrow({ where: { id: ticketId } });
     const ticket = await prisma.ticket.update({
       where: { id: ticketId },
       data: { status: TicketStatus.RESOLVED, resolvedAt: new Date() },
       include: { requester: true },
     });
-    await logStatusChange({ ticketId, fromStatus: previous.status, toStatus: TicketStatus.RESOLVED, changedById: resolvedById });
+    await logStatusChange({
+      ticketId,
+      fromStatus: previous.status,
+      toStatus: TicketStatus.RESOLVED,
+      changedById: resolvedById,
+      note: comment,
+    });
+    await prisma.ticketComment.create({
+      data: {
+        ticketId,
+        userId: resolvedById,
+        commentText: comment,
+        isInternal: false,
+      },
+    });
     await notificationService.sendTicketResolved(ticket, ticket.requester);
     return ticket;
   },
 };
+

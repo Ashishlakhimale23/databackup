@@ -97,7 +97,7 @@ export const updateUserSchema = z.object({
 
 export const createTicketCategorySchema = z.object({
   name: z.string().min(1).max(150),
-  defaultSlaHours: z.number().int().positive().optional(),
+  defaultSlaMinutes: z.number().int().positive().optional(),
   defaultPriority: z.nativeEnum(TicketPriority).optional(),
   minSupportLevel: z.nativeEnum(SupportLevel).optional(),
 });
@@ -130,4 +130,5 @@ export const createAuditLogSchema = z.object({
   entityType: z.string().min(1).max(50),
   entityId: z.string().optional(),
 });
+
 

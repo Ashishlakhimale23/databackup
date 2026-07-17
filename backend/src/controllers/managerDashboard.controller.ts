@@ -242,9 +242,7 @@ export const managerDashboardController = {
     if (ticket.assigneeId === newAssigneeId) {
       throw new AppError("Ticket is already assigned to this user", 400);
     }
-    if (ticket.requesterId === newAssigneeId) {
-      throw new AppError("Cannot reassign a ticket to the agent who raised it", 400);
-    }
+    
 
     const prevStatus = ticket.status;
 
@@ -260,13 +258,6 @@ export const managerDashboardController = {
       throw new AppError("New assignee is not in your department", 400);
     }
 
-    const newAssigneeActiveCount = await prisma.ticket.count({
-      where: { assigneeId: newAssigneeId, status: { not: "RESOLVED" } },
-    });
-
-    if (newAssigneeActiveCount > 3) {
-      throw new AppError("This agent already has more than 3 active tickets", 400);
-    }
 
     const updated = await prisma.ticket.update({
       where: { id: ticketId },

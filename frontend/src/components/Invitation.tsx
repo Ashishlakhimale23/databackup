@@ -36,7 +36,7 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
 
   const [name, setName] = useState<string>("");
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<UserRole>(UserRole.AGENT);
+  const [inviteRole, setInviteRole] = useState<UserRole>(UserRole.REQUESTER);
   const [inviteDeptIds, setInviteDeptIds] = useState<string[]>([]);
 
   const isExecutiveRole = inviteRole === UserRole.HOD || inviteRole === UserRole.CXO;
@@ -79,7 +79,7 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
     setSuccess("");
 
     try {
-      if (!isExecutiveRole && inviteCategoryIds.length <= 0) {
+      if (inviteRole != UserRole.REQUESTER && !isExecutiveRole && inviteCategoryIds.length <= 0) {
         setError("Select at least a single category");
         return;
       }
@@ -273,7 +273,7 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
                 className="w-full text-xs p-2.5 border border-zinc-300 bg-white"
                 required
               >
-                {["CXO","HOD","AGENT"].map((role) => (
+                {["CXO","HOD","AGENT","REQUESTER"].map((role) => (
                   
                   <option key={role} value={role}>
                     {role}
@@ -283,59 +283,63 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
             </div>
 
             {/* 4. Department (Single select for normal roles, Multi-select for HOD/CXO) */}
-            <div>
-              <label className="block text-xs font-semibold text-zinc-600 mb-1">
-                {isExecutiveRole ? "Assign Departments (Multiple allowed for HOD/CXO)" : "Assign Department"}
-              </label>
+            {
+              inviteRole != UserRole.REQUESTER && (
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-600 mb-1">
+                    {isExecutiveRole ? "Assign Departments (Multiple allowed for HOD/CXO)" : "Assign Department"}
+                  </label>
 
-              {isExecutiveRole ? (
-                <div className="space-y-1.5 max-h-40 overflow-y-auto p-2 border border-zinc-300 bg-white">
-                  {departments.length === 0 ? (
-                    <p className="text-[11px] text-zinc-400 italic">No departments available.</p>
+                  {isExecutiveRole ? (
+                    <div className="space-y-1.5 max-h-40 overflow-y-auto p-2 border border-zinc-300 bg-white">
+                      {departments.length === 0 ? (
+                        <p className="text-[11px] text-zinc-400 italic">No departments available.</p>
+                      ) : (
+                        departments.map((d) => {
+                          const isChecked = inviteDeptIds.includes(d.id);
+                          return (
+                            <label
+                              key={d.id}
+                              className="flex items-center space-x-2 text-xs text-zinc-700 cursor-pointer hover:bg-zinc-50 p-1"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setInviteDeptIds([...inviteDeptIds, d.id]);
+                                  } else {
+                                    setInviteDeptIds(inviteDeptIds.filter((id) => id !== d.id));
+                                  }
+                                }}
+                                className="rounded border-zinc-300 text-teal-600 focus:ring-teal-500"
+                              />
+                              <span>{d.name}</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
                   ) : (
-                    departments.map((d) => {
-                      const isChecked = inviteDeptIds.includes(d.id);
-                      return (
-                        <label
-                          key={d.id}
-                          className="flex items-center space-x-2 text-xs text-zinc-700 cursor-pointer hover:bg-zinc-50 p-1"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setInviteDeptIds([...inviteDeptIds, d.id]);
-                              } else {
-                                setInviteDeptIds(inviteDeptIds.filter((id) => id !== d.id));
-                              }
-                            }}
-                            className="rounded border-zinc-300 text-teal-600 focus:ring-teal-500"
-                          />
-                          <span>{d.name}</span>
-                        </label>
-                      );
-                    })
+                    <select
+                      value={inviteDeptId}
+                      onChange={(e) => handleInviteDeptChange(e.target.value)}
+                      className="w-full text-xs p-2.5 border border-zinc-300 bg-white"
+                    >
+                      <option value="">-- Choose Department --</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 </div>
-              ) : (
-                <select
-                  value={inviteDeptId}
-                  onChange={(e) => handleInviteDeptChange(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-zinc-300 bg-white"
-                >
-                  <option value="">-- Choose Department --</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
               )}
-            </div>
+
 
             {/* 5. Category (Hidden / Not applicable for HOD and CXO) */}
-            {!isExecutiveRole && inviteDeptId && (
+            {inviteRole!=UserRole.REQUESTER && !isExecutiveRole && inviteDeptId && (
               <div>
                 <label className="block text-xs font-semibold text-zinc-600 mb-1.5">
                   Assign Categories (Select multiple)

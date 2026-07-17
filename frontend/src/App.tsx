@@ -140,11 +140,11 @@ export default function App() {
 
   // Category and Keyword Creator states
   const [newCatName, setNewCatName] = useState("");
-  const [newCatSla, setNewCatSla] = useState("24");
+  const [newCatSla, setNewCatSla] = useState("1440");
   const [newCatPriority, setNewCatPriority] = useState<TicketPriority>(TicketPriority.P3);
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editCatName, setEditCatName] = useState("");
-  const [editCatSla, setEditCatSla] = useState("24");
+  const [editCatSla, setEditCatSla] = useState("1440");
   const [editCatPriority, setEditCatPriority] = useState<TicketPriority>(TicketPriority.P3);
   const [newCatLevel, setNewCatLevel] = useState<SupportLevel>(SupportLevel.L1);
 
@@ -587,7 +587,7 @@ export default function App() {
         },
         body: JSON.stringify({
           name: newCatName,
-          defaultSlaHours: Number(newCatSla),
+          defaultSlaMinutes: Number(newCatSla),
           defaultPriority: newCatPriority,
           minSupportLevel: newCatLevel
         })
@@ -618,7 +618,7 @@ export default function App() {
   const handleStartEditCategory = (c: TicketCategory) => {
     setEditingCategoryId(c.id);
     setEditCatName(c.name);
-    setEditCatSla(String(c.defaultSlaHours));
+    setEditCatSla(String(c.defaultSlaMinutes));
     setEditCatPriority(c.defaultPriority as TicketPriority);
   };
 
@@ -638,7 +638,7 @@ export default function App() {
         },
         body: JSON.stringify({
           name: editCatName,
-          defaultSlaHours: Number(editCatSla),
+          defaultSlaMinutes: Number(editCatSla),
           defaultPriority: editCatPriority,
         })
       });
@@ -1687,7 +1687,7 @@ export default function App() {
                           />
                           <input
                             type="number"
-                            placeholder="SLA Hours (e.g. 24)"
+                            placeholder="SLA Minutes (e.g. 1440)"
                             value={newCatSla}
                             onChange={(e) => setNewCatSla(e.target.value)}
                             className="text-xs p-2 border border-zinc-300 bg-white"
@@ -1796,7 +1796,7 @@ export default function App() {
                                         {c.name}
                                       </td>
                                       <td className="px-4 py-2.5 font-mono">
-                                        {c.defaultSlaHours} hours
+                                        {c.defaultSlaMinutes} minutes
                                       </td>
                                       <td className="px-4 py-2.5 font-mono font-bold text-teal-800">
                                         {c.defaultPriority}

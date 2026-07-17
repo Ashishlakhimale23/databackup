@@ -62,6 +62,8 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
   // this small inline form first and submits both together.
   const [showHoldCommentForm, setShowHoldCommentForm] = useState(false);
   const [holdComment, setHoldComment] = useState("");
+  const [showResolveCommentForm, setShowResolveCommentForm] = useState(false);
+  const [resolveComment, setResolveComment] = useState("");
   const [escalateLevel, setEscalateLevel] = useState<string>("");
 
   // Assign agent form
@@ -330,6 +332,8 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
 
       setShowHoldCommentForm(false);
       setHoldComment("");
+      setShowResolveCommentForm(false);
+      setResolveComment("");
       fetchTicketDetails();
       setSuccess(`Status changed to ${newStatus}.`);
     } catch (err: any) {
@@ -342,6 +346,15 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
     e.preventDefault();
     if (!holdComment.trim()) return;
     handleStatusChange(TicketStatus.ON_HOLD, holdComment);
+  };
+
+  // Action: Submit the resolve-reason form (comment is mandatory here, same
+  // treatment as ON_HOLD - it becomes the status history note and a
+  // regular ticket comment).
+  const handleResolveSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolveComment.trim()) return;
+    handleStatusChange(TicketStatus.RESOLVED, resolveComment);
   };
 
   // Action: Change Priority (Admin Override)
@@ -523,9 +536,9 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
             </button>
           )}
 
-          {(isdepartmentHeads || isStaff) && ticket.requester?.id !== currentUser.id && !["RESOLVED", "CLOSED"].includes(ticket.status) && (
+          {(isdepartmentHeads || isStaff) && !["RESOLVED", "CLOSED"].includes(ticket.status) && (
             <button
-              onClick={()=>handleStatusChange(TicketStatus.RESOLVED)}
+              onClick={() => setShowResolveCommentForm(true)}
               className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-all duration-200 cursor-pointer"
             >
               Resolve Ticket
@@ -533,7 +546,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
           )}
 
           {/* Quick status transitions for Staff */}
-          {(isStaff || isdepartmentHeads) && ticket.requester?.id !== currentUser.id && !["RESOLVED", "CLOSED"].includes(ticket.status) && (
+          {(isStaff || isdepartmentHeads)&& !["RESOLVED", "CLOSED"].includes(ticket.status) && (
             <div className="relative inline-block text-left">
               <select
                 value={ticket.status}
@@ -595,6 +608,65 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
           )}
         </div>
       </div>
+
+      {/* Resolve Ticket Dialog - a reason is mandatory before a ticket can
+          be resolved, same treatment as the ON-HOLD comment: it's stored
+          as the status history note and added as a regular ticket comment. */}
+      {showResolveCommentForm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-zinc-900">
+                Resolve Ticket
+              </h2>
+              <button
+                onClick={() => {
+                  setShowResolveCommentForm(false);
+                  setResolveComment("");
+                }}
+                className="text-zinc-400 hover:text-zinc-700 text-xl leading-none cursor-pointer"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleResolveSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                  Reason for resolving (required)
+                </label>
+                <textarea
+                  autoFocus
+                  placeholder="How was this ticket resolved?"
+                  value={resolveComment}
+                  onChange={(e) => setResolveComment(e.target.value)}
+                  className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white"
+                  rows={4}
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowResolveCommentForm(false);
+                    setResolveComment("");
+                  }}
+                  className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 border border-zinc-200 hover:bg-zinc-50 px-4 py-2 rounded-lg transition-all duration-200 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!resolveComment.trim()}
+                  className="bg-slate-900 hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-all duration-200 cursor-pointer"
+                >
+                  Confirm Resolve
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-sm flex items-center gap-2">
@@ -752,9 +824,9 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                   >
                     <div className="flex justify-between items-center text-[11px] text-zinc-500 font-mono mb-1.5 pb-1 border-b border-zinc-100">
                       <span className="font-semibold text-zinc-700">
-                        {comment.userName}
+                        {comment.user.fullName}
                         <span className="text-[10px] ml-1.5 text-zinc-400 bg-zinc-100 px-1 border">
-                          {comment.userRole}
+                          {comment.user.role}
                         </span>
                       </span>
                       <span>{new Date(comment.createdAt).toLocaleString()}</span>

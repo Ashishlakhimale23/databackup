@@ -510,9 +510,7 @@ export const ManagerDashboard: React.FC<ManagerDashboardProps> = ({
                                 {teamData?.users
                                   .filter(
                                     (u) =>
-                                      u.id !== t.assigneeId &&
-                                      u.activeTickets <= 3 &&
-                                      u.id !== t.requesterId
+                                      u.id !== t.assigneeId 
                                   )
                                   .map((u) => (
                                     <option key={u.id} value={u.id}>

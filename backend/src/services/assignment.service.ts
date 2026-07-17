@@ -47,12 +47,19 @@ export const assignmentService = {
         },
       });
 
-      const eligible = categoryAgents
-        .filter((ca)=>ticket.requesterId == ca.id)
+      let eligible 
+      if (categoryAgents.length > 2){
+
+        eligible = categoryAgents
         .filter((ca) => !ticket.supportLevel || ca.agent.supportLevel === ticket.supportLevel)
         .map((ca) => ({ agent: ca.agent, proficiency: ca.proficiency, openCount: ca.agent.ticketsAssigned.length }))
         
-        
+      }else {
+        eligible = categoryAgents
+        .filter((ca)=>ticket.requesterId == ca.id)
+        .filter((ca) => !ticket.supportLevel || ca.agent.supportLevel === ticket.supportLevel)
+        .map((ca) => ({ agent: ca.agent, proficiency: ca.proficiency, openCount: ca.agent.ticketsAssigned.length }))
+      }
 
       if (eligible.length > 0) {
         eligible.sort((a, b) => b.proficiency - a.proficiency || a.openCount - b.openCount);
