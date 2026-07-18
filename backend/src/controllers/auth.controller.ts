@@ -40,6 +40,27 @@ export const authController = {
       message: "Registration submitted. An admin will review your account before you can sign in.",
       user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role, approvalStatus: user.approvalStatus },
     });
-  }
+  },
+
+  // POST /auth/forgot-password  { email }
+  // Kicks off the reset flow by emailing a 6-digit OTP. Always returns a
+  // generic success message (see authService.requestPasswordReset) so this
+  // can't be used to probe which emails are registered.
+  async requestPasswordReset(req: Request, res: Response) {
+    const result = await authService.requestPasswordReset(req.body.email);
+    res.json(result);
+  },
+
+  // POST /auth/verify-reset-otp  { email, otp }
+  async verifyPasswordResetOtp(req: Request, res: Response) {
+    const result = await authService.verifyPasswordResetOtp(req.body.email, req.body.otp);
+    res.json(result);
+  },
+
+  // POST /auth/reset-password  { email, otp, password }
+  async resetPassword(req: Request, res: Response) {
+    const result = await authService.resetPassword(req.body.email, req.body.otp, req.body.password);
+    res.json(result);
+  },
 
 }
