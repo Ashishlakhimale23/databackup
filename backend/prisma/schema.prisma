@@ -107,10 +107,27 @@ model Department {
   agents      User[] @relation("departmentAgents")
 
   categories  TicketCategory[]
+  subDepartments SubDepartment[]
   tickets     Ticket[]
   keywords    Keyword[]
   invitations Invitation[]
   keywordSuggestions KeywordSuggestion[]
+}
+
+// NOTE(added): optional sub-grouping within a Department. A category can
+// optionally be mapped to one of the department's sub-departments; when a
+// category has no subDepartmentId it's a department-wide category.
+model SubDepartment {
+  id           String   @id @default(uuid())
+  departmentId String
+  name         String
+  description  String?
+  createdAt    DateTime @default(now())
+
+  department   Department       @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  categories   TicketCategory[]
+
+  @@unique([departmentId, name])
 }
 
 model User {
@@ -272,11 +289,15 @@ model CategoryAgent {
 model PriorityConfig {
   priority             TicketPriority @id
   updatedAt            DateTime       @updatedAt
+  
 }
 
 model TicketCategory {
   id              String         @id @default(uuid())
   departmentId    String
+  // NOTE(added): optional - a category can be scoped to one of the
+  // department's sub-departments, or left null to stay department-wide.
+  subDepartmentId String?
   name            String
   // NOTE(added): stored in minutes (previously hours) so category SLAs can
   // be configured with sub-hour precision.
@@ -284,8 +305,16 @@ model TicketCategory {
   
   defaultPriority TicketPriority @default(P3)
 
+  // NOTE(added): admin-only classification flags set when the category is
+  // created/edited. Never surfaced to requesters/agents - only to
+  // GLOBAL_ADMIN / HOD in the category configuration screens.
+  isWorkStopping     Boolean @default(false)
+  isSafetyViolation  Boolean @default(false)
+
   department      Department     @relation(fields: [departmentId], references: [id],onDelete: Cascade)
+  subDepartment   SubDepartment? @relation(fields: [subDepartmentId], references: [id], onDelete: SetNull)
   tickets         Ticket[]
+
   // invitations 
   invitations Invitation[]
 
@@ -489,5 +518,6 @@ model AdminMessage {
 
   @@index([userId, createdAt])
 }
+
 
 
