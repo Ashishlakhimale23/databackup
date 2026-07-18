@@ -33,16 +33,31 @@ export const CLIENT_OPTIONS: {
 const DEPARTMENTS: Record<string,
   {
     description: string;
-    categories: { name: string; defaultSlaMinutes: number; defaultPriority: TicketPriority; minSupportLevel: SupportLevel }[];
+    // NOTE(added): optional grouping within the department. Categories
+    // below can reference one of these by name via subDepartmentName -
+    // departments that don't need the extra grouping just omit this.
+    subDepartments?: string[];
+    categories: {
+      name: string;
+      defaultSlaMinutes: number;
+      defaultPriority: TicketPriority;
+      minSupportLevel: SupportLevel;
+      // NOTE(added): optional - must match an entry in subDepartments above.
+      subDepartmentName?: string;
+      // NOTE(added): admin-only classification flags, default false.
+      isWorkStopping?: boolean;
+      isSafetyViolation?: boolean;
+    }[];
     keywords: { name: string; synonyms: string[] }[];
   }
 > = {
   Maintenance: {
     description: "Equipment and vehicle maintenance requests",
+    subDepartments: ["Heavy Equipment", "Light Vehicles"],
     categories: [
-      { name: "Breakdown", defaultSlaMinutes: 120, defaultPriority: TicketPriority.P1, minSupportLevel: SupportLevel.L2 },
+      { name: "Breakdown", defaultSlaMinutes: 120, defaultPriority: TicketPriority.P1, minSupportLevel: SupportLevel.L2, subDepartmentName: "Heavy Equipment", isWorkStopping: true },
       { name: "Scheduled Service", defaultSlaMinutes: 2880, defaultPriority: TicketPriority.P4, minSupportLevel: SupportLevel.L1 },
-      { name: "Parts Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Parts Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1, subDepartmentName: "Light Vehicles" },
     ],
     keywords: [
       { name: "Engine", synonyms: ["engine failure", "overheating", "oil leak", "coolant"] },
@@ -68,10 +83,11 @@ const DEPARTMENTS: Record<string,
   },
   Safety: {
     description: "Health, safety, and incident reporting",
+    subDepartments: ["Site Safety", "Equipment Safety"],
     categories: [
-      { name: "Incident Report", defaultSlaMinutes: 60, defaultPriority: TicketPriority.P1, minSupportLevel: SupportLevel.L2 },
-      { name: "Near Miss", defaultSlaMinutes: 480, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2 },
-      { name: "Safety Equipment Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1 },
+      { name: "Incident Report", defaultSlaMinutes: 60, defaultPriority: TicketPriority.P1, minSupportLevel: SupportLevel.L2, subDepartmentName: "Site Safety", isWorkStopping: true, isSafetyViolation: true },
+      { name: "Near Miss", defaultSlaMinutes: 480, defaultPriority: TicketPriority.P2, minSupportLevel: SupportLevel.L2, subDepartmentName: "Site Safety", isSafetyViolation: true },
+      { name: "Safety Equipment Request", defaultSlaMinutes: 1440, defaultPriority: TicketPriority.P3, minSupportLevel: SupportLevel.L1, subDepartmentName: "Equipment Safety" },
       { name: "Compliance / Audit", defaultSlaMinutes: 2880, defaultPriority: TicketPriority.P4, minSupportLevel: SupportLevel.L2 },
     ],
     keywords: [
@@ -187,13 +203,27 @@ async function main() {
       data: { name: deptName, description: deptData.description },
     });
 
+    // Sub-departments are optional - only a handful of departments define
+    // them. Create them first so categories below can be mapped to one.
+    const subDepartmentIdByName: Record<string, string> = {};
+    if (deptData.subDepartments?.length) {
+      for (const subDeptName of deptData.subDepartments) {
+        const subDepartment = await prisma.subDepartment.create({
+          data: { departmentId: department.id, name: subDeptName },
+        });
+        subDepartmentIdByName[subDeptName] = subDepartment.id;
+      }
+    }
 
     await prisma.ticketCategory.createMany({
       data: deptData.categories.map((c) => ({
         departmentId: department.id,
+        subDepartmentId: c.subDepartmentName ? subDepartmentIdByName[c.subDepartmentName] : null,
         name: c.name,
         defaultSlaMinutes: c.defaultSlaMinutes,
         defaultPriority: c.defaultPriority,
+        isWorkStopping: c.isWorkStopping ?? false,
+        isSafetyViolation: c.isSafetyViolation ?? false,
       })),
     });
 
