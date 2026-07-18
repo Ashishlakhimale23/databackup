@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Edit2, Trash2, ShieldAlert, CheckCircle } from "lucide-react";
-import { Client } from "../types";
+import { Plus, Edit2, Trash2, ShieldAlert, CheckCircle, ChevronDown, ChevronUp, Star, PowerOff } from "lucide-react";
+import { Client, Project } from "../types";
 
 interface ClientManagementProps {
   token: string;
 }
 
-type DeleteClientDialogProps = {
+type DeleteDialogProps = {
   isOpen: boolean;
-  clientName?: string;
+  title: string;
+  itemName?: string;
   onClose: () => void;
   onConfirm: () => void;
 };
@@ -17,14 +18,36 @@ export default function ClientManagement({ token }: ClientManagementProps) {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [deleteId,setDeleteId] = useState<string>("")
   const [success, setSuccess] = useState("");
+
+  // client create/edit
   const [newClientName, setNewClientName] = useState("");
-  const [newProjectName,setNewProjectName] = useState("")
+  const [newClientIsKey, setNewClientIsKey] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [editProjectName,seteditProjectName] = useState("")
   const [editClientName, setEditClientName] = useState("");
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [editClientIsKey, setEditClientIsKey] = useState(false);
+
+  // client delete
+  const [deleteClientId, setDeleteClientId] = useState<string>("");
+  const [deleteClientName, setDeleteClientName] = useState<string>("");
+  const [isDeleteClientOpen, setIsDeleteClientOpen] = useState(false);
+
+  // expanded rows (to show/manage projects)
+  const [expandedClientId, setExpandedClientId] = useState<string>("");
+
+  // project create (per client)
+  const [newProjectName, setNewProjectName] = useState<Record<string, string>>({});
+  const [newProjectShutdown, setNewProjectShutdown] = useState<Record<string, boolean>>({});
+
+  // project edit
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editProjectName, setEditProjectName] = useState("");
+  const [editProjectShutdown, setEditProjectShutdown] = useState(false);
+
+  // project delete
+  const [deleteProjectId, setDeleteProjectId] = useState<string>("");
+  const [deleteProjectName, setDeleteProjectName] = useState<string>("");
+  const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false);
 
   const fetchClients = async () => {
     setLoading(true);
@@ -47,7 +70,9 @@ export default function ClientManagement({ token }: ClientManagementProps) {
     fetchClients();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  // ---- Client CRUD ----
+
+  const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClientName.trim()) return;
     setError("");
@@ -59,20 +84,20 @@ export default function ClientManagement({ token }: ClientManagementProps) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ name: newClientName.trim(),projectName: newProjectName.trim() })
+        body: JSON.stringify({ name: newClientName.trim(), isKeyClient: newClientIsKey })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create client");
+      if (!res.ok) throw new Error(data.message || "Failed to create client");
       setSuccess("Client added successfully.");
       setNewClientName("");
-      setNewProjectName("")
+      setNewClientIsKey(false);
       fetchClients();
     } catch (err: any) {
       setError(err.message);
     }
   };
 
-  const handleUpdate = async (e: React.FormEvent) => {
+  const handleUpdateClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingClient || !editClientName.trim()) return;
     setError("");
@@ -84,10 +109,10 @@ export default function ClientManagement({ token }: ClientManagementProps) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ name: editClientName.trim(),projectName:editProjectName.trim() })
+        body: JSON.stringify({ name: editClientName.trim(), isKeyClient: editClientIsKey })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to update client");
+      if (!res.ok) throw new Error(data.message || "Failed to update client");
       setSuccess("Client updated successfully.");
       setEditingClient(null);
       setEditClientName("");
@@ -97,20 +122,89 @@ export default function ClientManagement({ token }: ClientManagementProps) {
     }
   };
 
-  const handleDelete = async () => {
-    
+  const handleDeleteClient = async () => {
     setError("");
     setSuccess("");
     try {
-      const res = await fetch(`http://localhost:3000/clients/${deleteId}`, {
+      const res = await fetch(`http://localhost:3000/clients/${deleteClientId}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to delete client");
+      if (!res.ok) throw new Error(data.message || "Failed to delete client");
       setSuccess("Client deleted successfully.");
-      setDeleteId("")
-      setIsDeleteOpen(false)
+      setDeleteClientId("");
+      setIsDeleteClientOpen(false);
+      fetchClients();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // ---- Project CRUD ----
+
+  const handleCreateProject = async (clientId: string) => {
+    const name = (newProjectName[clientId] || "").trim();
+    if (!name) return;
+    setError("");
+    setSuccess("");
+    try {
+      const res = await fetch(`http://localhost:3000/clients/${clientId}/projects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name, isShutdownJob: !!newProjectShutdown[clientId] })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to create project");
+      setSuccess("Project added successfully.");
+      setNewProjectName((prev) => ({ ...prev, [clientId]: "" }));
+      setNewProjectShutdown((prev) => ({ ...prev, [clientId]: false }));
+      fetchClients();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleUpdateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProject || !editProjectName.trim()) return;
+    setError("");
+    setSuccess("");
+    try {
+      const res = await fetch(`http://localhost:3000/projects/${editingProject.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: editProjectName.trim(), isShutdownJob: editProjectShutdown })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to update project");
+      setSuccess("Project updated successfully.");
+      setEditingProject(null);
+      fetchClients();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    setError("");
+    setSuccess("");
+    try {
+      const res = await fetch(`http://localhost:3000/projects/${deleteProjectId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to delete project");
+      setSuccess("Project deleted successfully.");
+      setDeleteProjectId("");
+      setIsDeleteProjectOpen(false);
       fetchClients();
     } catch (err: any) {
       setError(err.message);
@@ -122,7 +216,7 @@ export default function ClientManagement({ token }: ClientManagementProps) {
       <div className="flex justify-between items-center pb-4 border-b border-slate-100">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Clients Management</h1>
-          <p className="text-sm text-slate-500 mt-1">Configure global business clients and accounts linked to ticket reporting.</p>
+          <p className="text-sm text-slate-500 mt-1">Configure global business clients, mark key accounts, and manage each client's projects.</p>
         </div>
       </div>
 
@@ -140,18 +234,21 @@ export default function ClientManagement({ token }: ClientManagementProps) {
         </div>
       )}
 
-      {
+      <DeleteDialog
+        isOpen={isDeleteClientOpen}
+        title="Delete Client"
+        itemName={deleteClientName}
+        onClose={() => setIsDeleteClientOpen(false)}
+        onConfirm={handleDeleteClient}
+      />
 
-<DeleteClientDialog
-  isOpen={isDeleteOpen}
-  clientName="Acme Corp"
-  onClose={() =>{
-    setIsDeleteOpen(false)
-  }}
-  //@ts-ignore
-  onConfirm={() => handleDelete()}
-/>
-      }
+      <DeleteDialog
+        isOpen={isDeleteProjectOpen}
+        title="Delete Project"
+        itemName={deleteProjectName}
+        onClose={() => setIsDeleteProjectOpen(false)}
+        onConfirm={handleDeleteProject}
+      />
 
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left pane: Client list */}
@@ -162,60 +259,181 @@ export default function ClientManagement({ token }: ClientManagementProps) {
           ) : clients.length === 0 ? (
             <div className="py-8 text-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl">No clients registered yet.</div>
           ) : (
-            <div className="overflow-x-auto border border-slate-200/80 rounded-xl shadow-xs overflow-hidden">
-              <table className="min-w-full divide-y divide-slate-100 text-xs">
-                <thead className="bg-slate-50/75 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                  <tr>
-                    <th className="px-6 py-3.5 text-left">Client Name</th>
-                    <th className="px-6 py-3.5 text-left">Project Name</th>
-                    <th className="px-6 py-3.5 text-left">Registered Date</th>
-                    <th className="px-6 py-3.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {Array.isArray(clients) &&  clients.map(c => (
-                    <tr key={c.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 py-4 font-semibold text-slate-900">{c.name}</td>
-                      <td className="px-6 py-4 font-semibold text-slate-900">{c.projectName}</td>
-                      <td className="px-6 py-4 text-slate-500 font-mono">{new Date(c.createdAt).toLocaleDateString()}</td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="inline-flex gap-2">
-                          <button
-                            onClick={() => {
-                              setEditingClient(c);
-                              setEditClientName(c.name);
-                              seteditProjectName(c.projectName)
-                            }}
-                            className="p-1.5 text-slate-500 hover:text-slate-900 border border-slate-200 hover:bg-slate-50 rounded"
-                            title="Edit Client"
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setIsDeleteOpen(true)
-                              setDeleteId(c.id)
+            <div className="border border-slate-200/80 rounded-xl shadow-xs overflow-hidden divide-y divide-slate-100">
+              {clients.map(c => {
+                const isExpanded = expandedClientId === c.id;
+                return (
+                  <div key={c.id}>
+                    <div className="flex items-center justify-between px-6 py-4 hover:bg-slate-50/50 transition-colors">
+                      <button
+                        className="flex items-center gap-2 text-left"
+                        onClick={() => setExpandedClientId(isExpanded ? "" : c.id)}
+                      >
+                        {isExpanded ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                        <span className="font-semibold text-slate-900 text-sm">{c.name}</span>
+                        {c.isKeyClient && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-bold uppercase tracking-wide">
+                            <Star size={10} /> Key Client
+                          </span>
+                        )}
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {c.projects?.length || 0} project{c.projects?.length === 1 ? "" : "s"}
+                        </span>
+                      </button>
 
-                            }}
-                            className="p-1.5 text-red-500 hover:text-red-700 border border-slate-200 hover:bg-red-50 rounded"
-                            title="Delete Client"
+                      <div className="inline-flex gap-2 shrink-0">
+                        <button
+                          onClick={() => {
+                            setEditingClient(c);
+                            setEditClientName(c.name);
+                            setEditClientIsKey(c.isKeyClient);
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-slate-900 border border-slate-200 hover:bg-slate-50 rounded"
+                          title="Edit Client"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setDeleteClientId(c.id);
+                            setDeleteClientName(c.name);
+                            setIsDeleteClientOpen(true);
+                          }}
+                          className="p-1.5 text-red-500 hover:text-red-700 border border-slate-200 hover:bg-red-50 rounded"
+                          title="Delete Client"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="px-6 pb-5 bg-slate-50/60">
+                        {c.projects && c.projects.length > 0 ? (
+                          <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white mb-3">
+                            <table className="min-w-full divide-y divide-slate-100 text-xs">
+                              <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
+                                <tr>
+                                  <th className="px-4 py-2.5 text-left">Project Name</th>
+                                  <th className="px-4 py-2.5 text-left">Shutdown Job</th>
+                                  <th className="px-4 py-2.5 text-right">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {c.projects.map(p => (
+                                  <tr key={p.id}>
+                                    <td className="px-4 py-2.5 font-medium text-slate-800">{p.name}</td>
+                                    <td className="px-4 py-2.5">
+                                      {p.isShutdownJob ? (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-bold uppercase tracking-wide">
+                                          <PowerOff size={10} /> Shutdown
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-400 text-[10px] font-mono">Active</span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right">
+                                      <div className="inline-flex gap-2">
+                                        <button
+                                          onClick={() => {
+                                            setEditingProject(p);
+                                            setEditProjectName(p.name);
+                                            setEditProjectShutdown(p.isShutdownJob);
+                                          }}
+                                          className="p-1 text-slate-500 hover:text-slate-900 border border-slate-200 hover:bg-slate-50 rounded"
+                                          title="Edit Project"
+                                        >
+                                          <Edit2 size={12} />
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setDeleteProjectId(p.id);
+                                            setDeleteProjectName(p.name);
+                                            setIsDeleteProjectOpen(true);
+                                          }}
+                                          className="p-1 text-red-500 hover:text-red-700 border border-slate-200 hover:bg-red-50 rounded"
+                                          title="Delete Project"
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-400 py-3">No projects yet for this client.</div>
+                        )}
+
+                        {/* Edit project inline form */}
+                        {editingProject && c.projects.some(p => p.id === editingProject.id) && (
+                          <form onSubmit={handleUpdateProject} className="flex flex-wrap items-end gap-2 mb-3 p-3 bg-white border border-slate-200 rounded-lg">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-slate-600 mb-1">Project Name</label>
+                              <input
+                                type="text"
+                                value={editProjectName}
+                                onChange={(e) => setEditProjectName(e.target.value)}
+                                className="text-xs p-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20"
+                                required
+                              />
+                            </div>
+                            <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 pb-2">
+                              <input
+                                type="checkbox"
+                                checked={editProjectShutdown}
+                                onChange={(e) => setEditProjectShutdown(e.target.checked)}
+                              />
+                              Shutdown Job
+                            </label>
+                            <button type="submit" className="px-3 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800">Save</button>
+                            <button type="button" onClick={() => setEditingProject(null)} className="px-3 py-2 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100">Cancel</button>
+                          </form>
+                        )}
+
+                        {/* Add project inline form */}
+                        <div className="flex flex-wrap items-end gap-2">
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-600 mb-1">New Project Name</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Migration Phase 2"
+                              value={newProjectName[c.id] || ""}
+                              onChange={(e) => setNewProjectName((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                              className="text-xs p-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20"
+                            />
+                          </div>
+                          <label className="flex items-center gap-1.5 text-[11px] font-medium text-slate-600 pb-2">
+                            <input
+                              type="checkbox"
+                              checked={!!newProjectShutdown[c.id]}
+                              onChange={(e) => setNewProjectShutdown((prev) => ({ ...prev, [c.id]: e.target.checked }))}
+                            />
+                            Shutdown Job
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleCreateProject(c.id)}
+                            className="inline-flex items-center gap-1 px-3 py-2 bg-slate-900 text-white text-xs font-semibold rounded-lg hover:bg-slate-800"
                           >
-                            <Trash2 size={14} />
+                            <Plus size={14} /> Add Project
                           </button>
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Right pane: Create / Edit forms */}
+        {/* Right pane: Create / Edit client forms */}
         <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl h-fit">
           {editingClient ? (
-            <form onSubmit={handleUpdate} className="space-y-4">
+            <form onSubmit={handleUpdateClient} className="space-y-4">
               <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2">Edit Client</h3>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Client Name</label>
@@ -227,23 +445,21 @@ export default function ClientManagement({ token }: ClientManagementProps) {
                   required
                 />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Project Name</label>
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                 <input
-                  type="text"
-                  value={editProjectName}
-                  onChange={(e) => seteditProjectName(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 font-medium"
-                  required
+                  type="checkbox"
+                  checked={editClientIsKey}
+                  onChange={(e) => setEditClientIsKey(e.target.checked)}
                 />
-              </div>
+                Key Client
+              </label>
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
                   onClick={() => {
                     setEditingClient(null);
                     setEditClientName("");
-                    seteditProjectName("")
+                    setEditClientIsKey(false);
                   }}
                   className="px-3.5 py-2 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-100 cursor-pointer"
                 >
@@ -258,7 +474,7 @@ export default function ClientManagement({ token }: ClientManagementProps) {
               </div>
             </form>
           ) : (
-            <form onSubmit={handleCreate} className="space-y-4">
+            <form onSubmit={handleCreateClient} className="space-y-4">
               <h3 className="text-xs font-bold font-mono uppercase tracking-wider text-slate-500 border-b border-slate-200 pb-2">Add New Client</h3>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Client Name</label>
@@ -271,17 +487,15 @@ export default function ClientManagement({ token }: ClientManagementProps) {
                   required
                 />
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Project Name</label>
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
                 <input
-                  type="text"
-                  placeholder="e.g. Wayne Enterprises"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-slate-500/20 focus:border-slate-400 font-medium"
-                  required
+                  type="checkbox"
+                  checked={newClientIsKey}
+                  onChange={(e) => setNewClientIsKey(e.target.checked)}
                 />
-              </div>
+                Key Client
+              </label>
+              <p className="text-[11px] text-slate-400">You can add projects for this client after it's created, from the list on the left.</p>
               <div className="flex justify-end">
                 <button
                   type="submit"
@@ -301,9 +515,10 @@ export default function ClientManagement({ token }: ClientManagementProps) {
 
 
 
-const DeleteClientDialog: React.FC<DeleteClientDialogProps> = ({
+const DeleteDialog: React.FC<DeleteDialogProps> = ({
   isOpen,
-  clientName,
+  title,
+  itemName,
   onClose,
   onConfirm,
 }) => {
@@ -313,13 +528,13 @@ const DeleteClientDialog: React.FC<DeleteClientDialogProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
         <h2 className="text-xl font-semibold text-gray-900">
-          Delete Client
+          {title}
         </h2>
 
         <p className="mt-3 text-gray-600">
           Are you sure you want to delete{" "}
           <span className="font-medium text-gray-900">
-            {clientName || "this client"}
+            {itemName || "this item"}
           </span>
           ? This action cannot be undone.
         </p>
@@ -336,7 +551,7 @@ const DeleteClientDialog: React.FC<DeleteClientDialogProps> = ({
             onClick={onConfirm}
             className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700"
           >
-            Delete Client
+            Delete
           </button>
         </div>
       </div>
