@@ -142,6 +142,8 @@ export const ticketController = {
       dateOfOccurance: req.body.dateOfOccurance,
       site: req.body.site,
       state: req.body.state,
+      designation: req.body.designation,
+      projectId: req.body.projectId,
     });
     res.status(201).json(ticket);
   },
@@ -615,6 +617,3 @@ export const ticketController = {
     res.status(204).send();
   },
 };
-
-
-
