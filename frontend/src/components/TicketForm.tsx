@@ -1,6 +1,6 @@
 import { FileText } from "lucide-react"
 import { useState } from "react";
-import { Department, TicketCategory, Client, PAGES } from "../types";
+import { Department, TicketCategory, Client, PAGES, SubDepartment } from "../types";
 
 export const TicketForm = ({setError,setSuccess,setSelectedTicketId,setCurrentView,token,departments,clients}:{
     setError:React.Dispatch<React.SetStateAction<string>>,
@@ -25,25 +25,51 @@ export const TicketForm = ({setError,setSuccess,setSelectedTicketId,setCurrentVi
   const [newTicketAttachName, setNewTicketAttachName] = useState("");
   const [newTicketAttachUrl, setNewTicketAttachUrl] = useState("");
   const [deptCategories, setDeptCategories] = useState<TicketCategory[]>([]);
+  const [deptSubDepartments, setDeptSubDepartments] = useState<SubDepartment[]>([]);
+  const [newTicketSubDepartment, setNewTicketSubDepartment] = useState("");
 
 
 
-// Handles department select when submitting ticket to trigger category fetching
+// Handles department select when submitting ticket to trigger category
+// (and sub-department) fetching. Sub-department is optional: until the
+// user picks one, the category dropdown lists every category under the
+// department.
   const handleTicketDeptChange = async (deptId: string) => {
     setNewTicketDept(deptId);
     setNewTicketCategory("");
+    setNewTicketSubDepartment("");
     if (!deptId || deptId === "OTHER") {
       setDeptCategories([]);
+      setDeptSubDepartments([]);
       return;
     }
     try {
-      const res = await fetch(`http://localhost:3000/departments/${deptId}/categories`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setDeptCategories(data);
-      }
+      const [catRes, subDeptRes] = await Promise.all([
+        fetch(`http://localhost:3000/departments/${deptId}/categories`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch(`http://localhost:3000/departments/${deptId}/subdepartments`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+      if (catRes.ok) setDeptCategories(await catRes.json());
+      if (subDeptRes.ok) setDeptSubDepartments(await subDeptRes.json());
+    } catch (err) {}
+  };
+
+  // Handles sub-department select - re-fetches categories scoped to just
+  // that sub-department. Clearing the sub-department (back to "-- All --")
+  // goes back to showing every category in the department.
+  const handleTicketSubDepartmentChange = async (subDepartmentId: string) => {
+    setNewTicketSubDepartment(subDepartmentId);
+    setNewTicketCategory("");
+    if (!newTicketDept || newTicketDept === "OTHER") return;
+    try {
+      const url = subDepartmentId
+        ? `http://localhost:3000/departments/${newTicketDept}/categories?subDepartmentId=${subDepartmentId}`
+        : `http://localhost:3000/departments/${newTicketDept}/categories`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setDeptCategories(await res.json());
     } catch (err) {}
   };
 
@@ -102,6 +128,8 @@ export const TicketForm = ({setError,setSuccess,setSelectedTicketId,setCurrentVi
       setNewTicketDesc("");
       setNewTicketDept("");
       setNewTicketCategory("");
+      setNewTicketSubDepartment("");
+      setDeptSubDepartments([]);
       setNewTicketClient("");
       setNewTicketClientEmail("");
       setNewTicketClientRep("");
@@ -150,6 +178,22 @@ export const TicketForm = ({setError,setSuccess,setSelectedTicketId,setCurrentVi
                       
                     </select>
                   </div>
+
+                  {newTicketDept && newTicketDept !== "OTHER" && deptSubDepartments.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Sub-Department</label>
+                      <select
+                        value={newTicketSubDepartment}
+                        onChange={(e) => handleTicketSubDepartmentChange(e.target.value)}
+                        className="w-full text-xs p-2.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer"
+                      >
+                        <option value="">-- All / Not applicable --</option>
+                        {deptSubDepartments.map(sd => (
+                          <option key={sd.id} value={sd.id}>{sd.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-700 mb-1">Ticket Category </label>
