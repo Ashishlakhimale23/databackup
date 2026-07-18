@@ -560,6 +560,25 @@ model Invitation {
   department      Department[]     
 }
 
+// NOTE(added): forgot-password flow. A row is created when a user requests
+// an OTP, the 6-digit code is stored hashed (never plaintext) with a short
+// TTL, and `verified` gates the final POST /auth/reset-password call so an
+// attacker can't skip straight to setting a new password without first
+// proving they own the inbox. `attempts` caps brute force of the 6-digit
+// code within the TTL window (see authService.verifyResetOtp).
+model PasswordResetOtp {
+  id          String    @id @default(uuid())
+  email       String
+  otpHash     String
+  expiresAt   DateTime
+  attempts    Int       @default(0)
+  verified    Boolean   @default(false)
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([email])
+}
+
 // NOTE(added): lets a GLOBAL_ADMIN send a message to a specific user
 // (primarily requesters), surfaced in that user's notifications panel.
 model AdminMessage {
@@ -575,9 +594,6 @@ model AdminMessage {
 
   @@index([userId, createdAt])
 }
-
-
-
 
 
 
