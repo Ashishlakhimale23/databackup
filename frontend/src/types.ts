@@ -102,12 +102,27 @@ export interface DepartmentSuggestions {
   name : string
 }
 
-export interface TicketCategory {
+export interface SubDepartment {
   id: string;
   departmentId: string;
   name: string;
+  description?: string;
+  createdAt: string;
+}
+
+export interface TicketCategory {
+  id: string;
+  departmentId: string;
+  // Optional - when set, this category only shows up once this
+  // sub-department is selected. When unset it's a department-wide category.
+  subDepartmentId?: string | null;
+  name: string;
   defaultSlaMinutes?: number;
   defaultPriority: TicketPriority;
+  // NOTE: only ever populated in responses to GLOBAL_ADMIN / HOD - the
+  // backend strips these two fields out for every other role.
+  isWorkStopping?: boolean;
+  isSafetyViolation?: boolean;
 }
 
 export interface Keyword {
