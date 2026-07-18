@@ -88,8 +88,31 @@ model Client {
   id String @id @default(uuid())
 
   name String
-  projectName String
+
+  // NOTE(added): marks a client as a "key client" (strategic / high-priority
+  // account) — surfaced to the global admin and usable for prioritization.
+  isKeyClient Boolean @default(false)
+
   createdAt DateTime @default(now())
+
+  // NOTE(added): a client can now have multiple projects under it, replacing
+  // the old single `projectName` string field.
+  projects Project[]
+}
+
+// NOTE(added): a project belongs to exactly one client. `isShutdownJob` flags
+// whether the project is a shutdown job (as opposed to ongoing work).
+model Project {
+  id String @id @default(uuid())
+
+  name          String
+  isShutdownJob Boolean @default(false)
+  createdAt     DateTime @default(now())
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, name])
 }
 
 model Department {
@@ -518,6 +541,8 @@ model AdminMessage {
 
   @@index([userId, createdAt])
 }
+
+
 
 
 
