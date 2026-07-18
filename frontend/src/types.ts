@@ -78,10 +78,19 @@ export interface AdminMessage {
   fromAdmin?: { fullName: string };
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  isShutdownJob: boolean;
+  clientId: string;
+  createdAt: string;
+}
+
 export interface Client {
   id: string;
   name: string;
-  projectName : string
+  isKeyClient: boolean;
+  projects: Project[];
   createdAt: string;
 }
 
