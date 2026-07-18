@@ -15,6 +15,7 @@ import { generalLimiter } from "./middleware/rateLimiter";
 import { requestLogger } from "./middleware/requestLogger";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler";
 import { clientRouter } from "./routes/client";
+import { projectRouter } from "./routes/project";
 import { managerDashboardRouter } from "./routes/managerDashboard";
 import { requestorRouter } from "./routes/requestors";
 import { notificationRouter } from "./routes/notifications";
@@ -41,6 +42,7 @@ app.use("/tickets", ticketRouter);
 app.use("/keywords", keywordRouter);
 app.use("/audit-logs", auditLogRouter);
 app.use("/clients",clientRouter)
+app.use("/projects",projectRouter)
 app.use("/manager-dashboard",managerDashboardRouter)
 app.use("/admin/requestors", requestorRouter)
 app.use("/notifications", notificationRouter)
