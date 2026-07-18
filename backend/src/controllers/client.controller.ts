@@ -5,13 +5,16 @@ import { AppError } from "../middleware/errorHandler";
 
 export const clientController = {
 
-
-
     async getClients(req: AuthedRequest, res: Response) {
         try {
             const clients = await prisma.client.findMany({
                 orderBy: {
                     createdAt: "desc",
+                },
+                include: {
+                    projects: {
+                        orderBy: { createdAt: "desc" },
+                    },
                 },
             });
 
@@ -34,7 +37,7 @@ export const clientController = {
 
     async createClient(req: AuthedRequest, res: Response) {
         try {
-            const { name,projectName } = req.body;
+            const { name, isKeyClient, projects } = req.body;
 
             if (!name || !name.trim()) {
                 return res.status(400).json({
@@ -43,11 +46,11 @@ export const clientController = {
                 });
             }
 
-            // check if the client already exists or not 
+            // check if the client already exists or not
 
             const existCheck = await prisma.client.findFirst({
-                where:{
-                    name : name.trim().toUpperCase()
+                where: {
+                    name: name.trim().toUpperCase()
                 }
             })
 
@@ -55,11 +58,25 @@ export const clientController = {
                 throw new AppError("The client already eixts", 401);
             }
 
+            // NOTE(added): projects can optionally be created alongside the
+            // client — each with its own isShutdownJob flag. `projects` is
+            // expected as an array of { name, isShutdownJob? }.
+            const projectNames: { name: string; isShutdownJob?: boolean }[] = Array.isArray(projects)
+                ? projects.filter((p: any) => p?.name && String(p.name).trim())
+                : [];
+
             const client = await prisma.client.create({
                 data: {
                     name: name.trim().toUpperCase(),
-                    projectName :projectName.trim().toUpperCase(), 
+                    isKeyClient: Boolean(isKeyClient),
+                    projects: {
+                        create: projectNames.map((p) => ({
+                            name: p.name.trim().toUpperCase(),
+                            isShutdownJob: Boolean(p.isShutdownJob),
+                        })),
+                    },
                 },
+                include: { projects: true },
             });
 
             return res.status(201).json({
@@ -81,7 +98,7 @@ export const clientController = {
     async updateClient(req: AuthedRequest, res: Response) {
         try {
             const { id } = req.params;
-            const { name,projectName } = req.body;
+            const { name, isKeyClient } = req.body;
 
             if (!name || !name.trim()) {
                 return res.status(400).json({
@@ -102,8 +119,9 @@ export const clientController = {
                 where: { id },
                 data: {
                     name: name.trim().toUpperCase(),
-                    projectName: projectName.trim().toUpperCase()
+                    ...(isKeyClient !== undefined ? { isKeyClient: Boolean(isKeyClient) } : {}),
                 },
+                include: { projects: true },
             });
 
             return res.status(200).json({
@@ -121,7 +139,7 @@ export const clientController = {
         }
     },
 
-    async deleteClient(req:AuthedRequest,res:Response){
+    async deleteClient(req: AuthedRequest, res: Response) {
         try {
             const { id } = req.params;
 
@@ -153,5 +171,3 @@ export const clientController = {
     }
 
 }
-
-
