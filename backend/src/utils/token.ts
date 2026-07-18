@@ -13,6 +13,15 @@ export function generateToken(): string {
   return crypto.randomBytes(32).toString("base64url");
 }
 
+/**
+ * Generates a 6-digit numeric OTP for the forgot-password flow, e.g. "042817".
+ * Uses crypto.randomInt (not Math.random) so the code isn't guessable from
+ * a predictable PRNG seed. Zero-padded so it's always exactly 6 digits.
+ */
+export function generateOtp(): string {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, "0");
+}
+
 export function generateRandomString(length:number) {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
