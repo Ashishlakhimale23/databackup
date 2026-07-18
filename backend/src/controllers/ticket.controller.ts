@@ -515,14 +515,14 @@ export const ticketController = {
   },
 
   // PATCH /tickets/:id/priority  { priority }  (GLOBAL_ADMIN, DEPT_ADMIN only)
-  // Manual override of the system-computed priority. internalPriority
-  // moves with it, since internalPriority is meant to reflect the true
-  // triage urgency and an admin override is exactly that kind of signal.
+  // Manual override of the system-computed priority. internalPriority is a
+  // separately-computed triage metric (see internalPriority.service.ts) and
+  // is intentionally left untouched by this override.
   async updatePriority(req: AuthedRequest, res: Response) {
     const { priority } = req.body;
     const ticket = await prisma.ticket.update({
       where: { id: req.params.id },
-      data: { priority, internalPriority: priority },
+      data: { priority },
     });
 
     await prisma.auditLog.create({
