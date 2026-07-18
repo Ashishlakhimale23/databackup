@@ -1,5 +1,5 @@
 import { prisma } from "../lib/database";
-import { SupportLevel, TicketStatus, UserRole, TicketPriority } from "../generated/prisma/client";
+import { SupportLevel, TicketStatus, UserRole, TicketPriority, InternalPriorityLevel } from "../generated/prisma/client";
 import { notificationService } from "./notification.service";
 
 const LEVEL_ORDER: SupportLevel[] = [SupportLevel.L1, SupportLevel.L2];
@@ -86,7 +86,7 @@ export const escalationService = {
           escalationReason: reason,
           status: TicketStatus.IN_PROGRESS,
           // Escalating a ticket is itself a signal it's more urgent than
-          // first triaged - bump internalPriority one notch if not already P1.
+          // first triaged - bump internalPriority one notch if not already CRITICAL.
           internalPriority: bumpPriority(ticket.internalPriority),
         },
       }),
@@ -168,8 +168,13 @@ export const escalationService = {
   },
 };
 
-function bumpPriority(p: TicketPriority): TicketPriority {
-  const order = [TicketPriority.P1, TicketPriority.P2, TicketPriority.P3, TicketPriority.P4];
+function bumpPriority(p: InternalPriorityLevel): InternalPriorityLevel {
+  const order = [
+    InternalPriorityLevel.CRITICAL,
+    InternalPriorityLevel.HIGH,
+    InternalPriorityLevel.MEDIUM,
+    InternalPriorityLevel.LOW,
+  ];
   const idx = order.indexOf(p);
   return order[Math.max(idx - 1, 0)];
 }
