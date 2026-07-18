@@ -40,6 +40,7 @@ import {
   Ticket as TicketType,
   Department,
   TicketCategory,
+  SubDepartment,
   Keyword,
   KeywordSuggestion,
   Invitation,
@@ -138,14 +139,28 @@ export default function App() {
   const [deptKeywordsList, setDeptKeywordsList] = useState<Keyword[]>([]);
   const [deptSuggestionsList, setDeptSuggestionsList] = useState<KeywordSuggestion[]>([]);
 
+  // Sub-Department Config state (optional grouping within a department)
+  const [deptSubDepartmentsList, setDeptSubDepartmentsList] = useState<SubDepartment[]>([]);
+  const [newSubDeptName, setNewSubDeptName] = useState("");
+  const [newSubDeptDescription, setNewSubDeptDescription] = useState("");
+
   // Category and Keyword Creator states
   const [newCatName, setNewCatName] = useState("");
   const [newCatSla, setNewCatSla] = useState("1440");
   const [newCatPriority, setNewCatPriority] = useState<TicketPriority>(TicketPriority.P3);
+  // Optional - leave "" to make the category department-wide
+  const [newCatSubDepartmentId, setNewCatSubDepartmentId] = useState("");
+  // Admin-only flags: never shown/known outside GLOBAL_ADMIN / HOD
+  const [newCatIsWorkStopping, setNewCatIsWorkStopping] = useState(false);
+  const [newCatIsSafetyViolation, setNewCatIsSafetyViolation] = useState(false);
+
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editCatName, setEditCatName] = useState("");
   const [editCatSla, setEditCatSla] = useState("1440");
   const [editCatPriority, setEditCatPriority] = useState<TicketPriority>(TicketPriority.P3);
+  const [editCatSubDepartmentId, setEditCatSubDepartmentId] = useState("");
+  const [editCatIsWorkStopping, setEditCatIsWorkStopping] = useState(false);
+  const [editCatIsSafetyViolation, setEditCatIsSafetyViolation] = useState(false);
   const [newCatLevel, setNewCatLevel] = useState<SupportLevel>(SupportLevel.L1);
 
   const [newKwName, setNewKwName] = useState("");
@@ -525,6 +540,14 @@ export default function App() {
         setDeptCategoriesList(catData);
       }
 
+      // 1b. Fetch sub-departments (optional grouping within the department)
+      const subDeptRes = await fetch(`http://localhost:3000/departments/${deptId}/subdepartments`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (subDeptRes.ok) {
+        setDeptSubDepartmentsList(await subDeptRes.json());
+      }
+
       // 2. Fetch keywords
       const kwRes = await fetch(`http://localhost:3000/keywords?departmentId=${deptId}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -574,6 +597,46 @@ export default function App() {
     }
   };
 
+  // Create Sub-Department (optional grouping within the selected department)
+  const handleCreateSubDepartment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSubDeptName || !selectedDeptId) return;
+    try {
+      const res = await fetch(`http://localhost:3000/departments/${selectedDeptId}/subdepartments`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: newSubDeptName,
+          description: newSubDeptDescription || undefined
+        })
+      });
+      if (res.ok) {
+        setNewSubDeptName("");
+        setNewSubDeptDescription("");
+        handleSelectDeptConfig(selectedDeptId);
+        setSuccess("Sub-department added to Department.");
+      }
+    } catch (err) {}
+  };
+
+  // Delete Sub-Department - categories mapped to it fall back to being
+  // department-wide rather than being deleted (handled by the backend).
+  const handleDeleteSubDepartment = async (subDeptId: string) => {
+    try {
+      const res = await fetch(`http://localhost:3000/subdepartments/${subDeptId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        handleSelectDeptConfig(selectedDeptId);
+        setSuccess("Sub-department deleted.");
+      }
+    } catch (err) {}
+  };
+
   // Create Category
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -589,11 +652,17 @@ export default function App() {
           name: newCatName,
           defaultSlaMinutes: Number(newCatSla),
           defaultPriority: newCatPriority,
-          minSupportLevel: newCatLevel
+          minSupportLevel: newCatLevel,
+          subDepartmentId: newCatSubDepartmentId || undefined,
+          isWorkStopping: newCatIsWorkStopping,
+          isSafetyViolation: newCatIsSafetyViolation
         })
       });
       if (res.ok) {
         setNewCatName("");
+        setNewCatSubDepartmentId("");
+        setNewCatIsWorkStopping(false);
+        setNewCatIsSafetyViolation(false);
         handleSelectDeptConfig(selectedDeptId);
         setSuccess("Category added to Department.");
       }
@@ -620,6 +689,9 @@ export default function App() {
     setEditCatName(c.name);
     setEditCatSla(String(c.defaultSlaMinutes));
     setEditCatPriority(c.defaultPriority as TicketPriority);
+    setEditCatSubDepartmentId(c.subDepartmentId || "");
+    setEditCatIsWorkStopping(!!c.isWorkStopping);
+    setEditCatIsSafetyViolation(!!c.isSafetyViolation);
   };
 
   const handleCancelEditCategory = () => {
@@ -640,6 +712,9 @@ export default function App() {
           name: editCatName,
           defaultSlaMinutes: Number(editCatSla),
           defaultPriority: editCatPriority,
+          subDepartmentId: editCatSubDepartmentId || null,
+          isWorkStopping: editCatIsWorkStopping,
+          isSafetyViolation: editCatIsSafetyViolation,
         })
       });
       if (res.ok) {
@@ -1664,6 +1739,62 @@ export default function App() {
                 <div className="lg:col-span-2 bg-white border border-zinc-200 p-6 h-fit">
                   {selectedDeptId ? (
                     <div className="space-y-8">
+                      {/* Sub-Section: Sub-Departments (optional grouping) */}
+                      <div>
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-900 border-b pb-2 mb-4 flex justify-between items-center">
+                          <span>Sub-Departments (optional)</span>
+                        </h3>
+
+                        {/* inline sub-department creator */}
+                        <form
+                          onSubmit={handleCreateSubDepartment}
+                          className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-zinc-50 p-3 border border-zinc-200 mb-4"
+                        >
+                          <input
+                            type="text"
+                            placeholder="Sub-Department Name"
+                            value={newSubDeptName}
+                            onChange={(e) => setNewSubDeptName(e.target.value)}
+                            className="text-xs p-2 border border-zinc-300 bg-white"
+                            required
+                          />
+                          <input
+                            type="text"
+                            placeholder="Description (optional)"
+                            value={newSubDeptDescription}
+                            onChange={(e) => setNewSubDeptDescription(e.target.value)}
+                            className="text-xs p-2 border border-zinc-300 bg-white"
+                          />
+                          <button
+                            type="submit"
+                            className="bg-zinc-800 text-white text-xs py-1 cursor-pointer font-bold hover:bg-zinc-700"
+                          >
+                            Add Sub-Department
+                          </button>
+                        </form>
+
+                        {deptSubDepartmentsList.length === 0 ? (
+                          <p className="text-xs text-zinc-400 italic">
+                            No sub-departments added yet - categories in this department are department-wide by default.
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {deptSubDepartmentsList.map((sd) => (
+                              <span
+                                key={sd.id}
+                                className="inline-flex items-center gap-2 text-xs bg-zinc-100 border border-zinc-200 px-2.5 py-1.5"
+                              >
+                                {sd.name}
+                                <Trash
+                                  className="w-3 h-3 text-red-400 cursor-pointer"
+                                  onClick={() => handleDeleteSubDepartment(sd.id)}
+                                />
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                       {/* Sub-Section: Categories */}
                       <div>
                         <h3 className="text-sm font-bold uppercase tracking-wider text-zinc-900 border-b pb-2 mb-4 flex justify-between items-center">
@@ -1708,6 +1839,35 @@ export default function App() {
                             <option value="P3">P3 - Moderate</option>
                             <option value="P4">P4 - Low</option>
                           </select>
+                          <select
+                            value={newCatSubDepartmentId}
+                            onChange={(e) => setNewCatSubDepartmentId(e.target.value)}
+                            className="text-xs p-2 border border-zinc-300 bg-white"
+                          >
+                            <option value="">-- Department-wide (no sub-dept) --</option>
+                            {deptSubDepartmentsList.map((sd) => (
+                              <option key={sd.id} value={sd.id}>{sd.name}</option>
+                            ))}
+                          </select>
+
+                          {/* Admin-only classification - never surfaced to requesters/agents */}
+                          <label className="text-xs flex items-center gap-1.5 bg-white border border-zinc-300 p-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={newCatIsWorkStopping}
+                              onChange={(e) => setNewCatIsWorkStopping(e.target.checked)}
+                            />
+                            Work Stopping
+                          </label>
+                          <label className="text-xs flex items-center gap-1.5 bg-white border border-zinc-300 p-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={newCatIsSafetyViolation}
+                              onChange={(e) => setNewCatIsSafetyViolation(e.target.checked)}
+                            />
+                            Safety Violation
+                          </label>
+
                           <button
                             type="submit"
                             className="bg-zinc-800 text-white text-xs py-1 cursor-pointer font-bold hover:bg-zinc-700"
@@ -1730,10 +1890,16 @@ export default function App() {
                                     Category Name
                                   </th>
                                   <th className="px-4 py-2.5 text-left">
+                                    Sub-Department
+                                  </th>
+                                  <th className="px-4 py-2.5 text-left">
                                     SLA SLA Deadline
                                   </th>
                                   <th className="px-4 py-2.5 text-left">
                                     Priority
+                                  </th>
+                                  <th className="px-4 py-2.5 text-left">
+                                    Flags (admin-only)
                                   </th>
                                   <th className="px-4 py-2.5 text-right">
                                     Action
@@ -1751,6 +1917,18 @@ export default function App() {
                                           onChange={(e) => setEditCatName(e.target.value)}
                                           className="text-xs p-1.5 border border-zinc-300 bg-white w-full"
                                         />
+                                      </td>
+                                      <td className="px-4 py-2.5">
+                                        <select
+                                          value={editCatSubDepartmentId}
+                                          onChange={(e) => setEditCatSubDepartmentId(e.target.value)}
+                                          className="text-xs p-1.5 border border-zinc-300 bg-white"
+                                        >
+                                          <option value="">-- Department-wide --</option>
+                                          {deptSubDepartmentsList.map((sd) => (
+                                            <option key={sd.id} value={sd.id}>{sd.name}</option>
+                                          ))}
+                                        </select>
                                       </td>
                                       <td className="px-4 py-2.5">
                                         <input
@@ -1775,6 +1953,24 @@ export default function App() {
                                           <option value="P4">P4 - Low</option>
                                         </select>
                                       </td>
+                                      <td className="px-4 py-2.5">
+                                        <label className="flex items-center gap-1 mb-1">
+                                          <input
+                                            type="checkbox"
+                                            checked={editCatIsWorkStopping}
+                                            onChange={(e) => setEditCatIsWorkStopping(e.target.checked)}
+                                          />
+                                          Work Stopping
+                                        </label>
+                                        <label className="flex items-center gap-1">
+                                          <input
+                                            type="checkbox"
+                                            checked={editCatIsSafetyViolation}
+                                            onChange={(e) => setEditCatIsSafetyViolation(e.target.checked)}
+                                          />
+                                          Safety Violation
+                                        </label>
+                                      </td>
                                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                         <button
                                           onClick={() => handleUpdateCategory(c.id)}
@@ -1795,11 +1991,31 @@ export default function App() {
                                       <td className="px-4 py-2.5 font-medium">
                                         {c.name}
                                       </td>
+                                      <td className="px-4 py-2.5 text-zinc-500">
+                                        {deptSubDepartmentsList.find((sd) => sd.id === c.subDepartmentId)?.name || (
+                                          <span className="italic text-zinc-400">Department-wide</span>
+                                        )}
+                                      </td>
                                       <td className="px-4 py-2.5 font-mono">
                                         {c.defaultSlaMinutes} minutes
                                       </td>
                                       <td className="px-4 py-2.5 font-mono font-bold text-teal-800">
                                         {c.defaultPriority}
+                                      </td>
+                                      <td className="px-4 py-2.5 space-x-1">
+                                        {c.isWorkStopping && (
+                                          <span className="inline-block bg-red-100 text-red-700 font-bold px-1.5 py-0.5">
+                                            Work Stopping
+                                          </span>
+                                        )}
+                                        {c.isSafetyViolation && (
+                                          <span className="inline-block bg-orange-100 text-orange-700 font-bold px-1.5 py-0.5">
+                                            Safety Violation
+                                          </span>
+                                        )}
+                                        {!c.isWorkStopping && !c.isSafetyViolation && (
+                                          <span className="text-zinc-400 italic">—</span>
+                                        )}
                                       </td>
                                       <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                         <button
