@@ -10,7 +10,6 @@ import {
   Paperclip,
   TrendingUp,
   RotateCw,
-  Plus,
   Trash2,
   Lock,
   ChevronDown,
@@ -19,6 +18,7 @@ import {
 } from "lucide-react";
 import { Ticket, Comment, Attachment, Escalation, Keyword, User as UserType, TicketStatus, TicketPriority, SupportLevel, TicketStatusHistory, PAGES, UserRole,ROLES } from "../types";
 import { userInfo } from "os";
+import AttachmentUploader from "./AttachmentUploader";
 interface metric {
         openTickets : number
         assignedTickets : number,
@@ -51,8 +51,6 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
   // Sub-component states
   const [commentText, setCommentText] = useState("");
   const [isInternal, setIsInternal] = useState(false);
-  const [attachFileName, setAttachFileName] = useState("");
-  const [attachFileUrl, setAttachFileUrl] = useState("");
 
   // Escalation form
   const [showEscalateForm, setShowEscalateForm] = useState(false);
@@ -185,35 +183,6 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
       setError(err.message);
     }
   };
-
-  // Action: Add Attachment
-  const handleAddAttachment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!attachFileName.trim() || !attachFileUrl.trim()) return;
-    setError("");
-    setSuccess("");
-    try {
-      const res = await fetch(`http://localhost:3000/tickets/${ticketId}/attachments`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ fileName: attachFileName.trim(), fileUrl: attachFileUrl.trim() })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to add attachment");
-
-      setAttachFileName("");
-      setAttachFileUrl("");
-      fetchTicketDetails();
-      setSuccess("Attachment added successfully.");
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-
 
   // Action: Assign Agent
   const handleAssignAgent = async (e: React.FormEvent) => {
@@ -850,40 +819,19 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
               Attachments ({attachments.length})
             </h2>
 
-            {/* Create Attachment form or locked notice */}
-            {["RESOLVED", "CLOSED"].includes(ticket.status) ? (
-              <div className="p-3 bg-slate-50 border border-slate-200 text-slate-500 text-xs flex items-center gap-2 mb-4 rounded-lg">
-                <Lock size={14} />
-                Adding attachments is disabled as this ticket is now <strong>{ticket.status}</strong>.
-              </div>
-            ) : (
-              <form onSubmit={handleAddAttachment} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                <input
-                  type="text"
-                  placeholder="File name (e.g., error_log.txt)"
-                  value={attachFileName}
-                  onChange={(e) => setAttachFileName(e.target.value)}
-                  className="text-xs p-2.5 border border-zinc-300 rounded-none bg-white focus:outline-none focus:border-zinc-500"
-                  required
-                />
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    placeholder="Paste URL (e.g., https://example.com/log)"
-                    value={attachFileUrl}
-                    onChange={(e) => setAttachFileUrl(e.target.value)}
-                    className="w-full text-xs p-2.5 border border-zinc-300 rounded-none bg-white focus:outline-none focus:border-zinc-500"
-                    required
-                  />
-                  <button
-                    type="submit"
-                    className="bg-[#032d26] hover:bg-[#021f1a] text-white text-xs font-semibold px-3 py-2 cursor-pointer flex items-center gap-1 shrink-0"
-                  >
-                    <Plus size={14} /> Link
-                  </button>
-                </div>
-              </form>
-            )}
+            {/* Upload attachments (drag & drop or browse) or locked notice */}
+            <div className="mb-4">
+              <AttachmentUploader
+                token={token}
+                ticketId={ticketId}
+                disabled={["RESOLVED", "CLOSED"].includes(ticket.status)}
+                disabledMessage={`Adding attachments is disabled as this ticket is now ${ticket.status}.`}
+                onUploaded={() => {
+                  fetchTicketDetails();
+                  setSuccess("Attachment uploaded successfully.");
+                }}
+              />
+            </div>
 
             {/* Attachments List */}
             {attachments.length === 0 ? (
