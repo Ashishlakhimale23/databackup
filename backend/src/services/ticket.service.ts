@@ -5,7 +5,7 @@ import { keywordService } from "./keyword.service";
 import { assignmentService } from "./assignment.service";
 import { notificationService } from "./notification.service";
 import { logStatusChange } from "./statushistory.service";
-import { Prisma, TicketPriority, SupportLevel, TicketStatus } from "../generated/prisma/client";
+import { Prisma, TicketPriority, SupportLevel, TicketStatus, Designation } from "../generated/prisma/client";
 import { minutesFromNow } from "../utils/time";
 
 // Baseline minutes used when there's no categoryId, or the category exists
@@ -65,10 +65,15 @@ export const ticketService = {
     dateOfOccurance: Date | string;
     site: string;
     state: string;
+    // NOTE(added): requester's designation, and the specific project (under
+    // the ticket's client) this issue relates to - both optional.
+    designation?: Designation;
+    projectId?: string;
   }) {
     const {
       requesterId, departmentId, categoryId, title, description, tags = [],
       representative, employeeId, clientName, clientEmail, dateOfOccurance, site, state,
+      designation, projectId,
     } = params;
 
     const requester = await prisma.user.findUniqueOrThrow({ where: { id: requesterId } });
@@ -96,6 +101,8 @@ export const ticketService = {
       clientEmail,
       dateOfOccurance: new Date(dateOfOccurance),
       site,
+      designation,
+      projectId,
       priority,
       internalPriority: priority,
       slaDeadline,
@@ -148,4 +155,3 @@ export const ticketService = {
     return ticket;
   },
 };
-
