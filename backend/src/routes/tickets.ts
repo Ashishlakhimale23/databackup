@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from "../middleware/auth";
 import { ticketController } from "../controllers/ticket.controller";
 import { commentController } from "../controllers/comment.controller";
 import { attachmentController } from "../controllers/attachment.controller";
+import { asyncHandler } from "../middleware/asyncHandler";
 
 export const ticketRouter = Router();
 
@@ -75,5 +76,10 @@ ticketRouter.post("/:ticketId/comments", requireAuth, commentController.create);
 ticketRouter.get("/:ticketId/comments", requireAuth, commentController.list);
 
 // ---- nested: attachments ----
-ticketRouter.post("/:ticketId/attachments", requireAuth, attachmentController.create);
-ticketRouter.get("/:ticketId/attachments", requireAuth, attachmentController.list);
+// Step 1: client asks for a presigned S3 PUT URL, uploads the file bytes
+// directly to S3 with it, then Step 2 (POST /attachments) records the
+// resulting object's metadata against the ticket.
+ticketRouter.post("/:ticketId/attachments/presign", requireAuth, asyncHandler(attachmentController.presign));
+ticketRouter.post("/:ticketId/attachments", requireAuth, asyncHandler(attachmentController.create));
+ticketRouter.get("/:ticketId/attachments", requireAuth, asyncHandler(attachmentController.list));
+
