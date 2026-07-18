@@ -1,12 +1,17 @@
 import { prisma } from "../lib/database";
 import { generateTicketNumber } from "../utils/token";
 import { priorityService } from "./priority.service";
+import { internalPriorityService } from "./internalPriority.service";
 import { keywordService } from "./keyword.service";
 import { assignmentService } from "./assignment.service";
 import { notificationService } from "./notification.service";
 import { logStatusChange } from "./statushistory.service";
 import { Prisma, TicketPriority, SupportLevel, TicketStatus, Designation } from "../generated/prisma/client";
 import { minutesFromNow } from "../utils/time";
+
+// Designations counted as "top management" for the P4 internal-priority
+// signal (see internalPriority.service.ts).
+const TOP_MANAGEMENT_DESIGNATIONS: Designation[] = [Designation.CEO, Designation.COO, Designation.CXO];
 
 // Baseline minutes used when there's no categoryId, or the category exists
 // but was never given a defaultSlaMinutes. category.defaultSlaMinutes, when
@@ -88,6 +93,20 @@ export const ticketService = {
     const baseSlaMinutes = category?.defaultSlaMinutes ?? BASE_SLA_MINUTES_BY_PRIORITY[priority];
     const slaDeadline = minutesFromNow(baseSlaMinutes);
 
+    // NOTE(added): internal priority (Critical/High/Medium/Low) is computed
+    // from 5 weighted signals pulled from the category, project, requester
+    // designation, and client - see internalPriority.service.ts.
+    const project = projectId ? await prisma.project.findUnique({ where: { id: projectId } }) : null;
+    const client = await prisma.client.findFirst({ where: { name: clientName } });
+
+    const internalPriorityResult = internalPriorityService.computeScore({
+      isWorkStopping: category?.isWorkStopping ?? false,
+      isSafetyViolation: category?.isSafetyViolation ?? false,
+      isShutdownJob: project?.isShutdownJob ?? false,
+      isReportedByTopManagement: !!designation && TOP_MANAGEMENT_DESIGNATIONS.includes(designation),
+      isKeyClient: client?.isKeyClient ?? false,
+    });
+
     
     const ticket = await this.createTicketWithUniqueNumber({
       title,
@@ -104,7 +123,7 @@ export const ticketService = {
       designation,
       projectId,
       priority,
-      internalPriority: priority,
+      internalPriority: internalPriorityResult.level,
       slaDeadline,
       slaTotalMinutes: baseSlaMinutes,
     });
