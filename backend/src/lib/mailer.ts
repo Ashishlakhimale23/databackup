@@ -12,7 +12,6 @@ export const transporter = nodemailer.createTransport({
   },
 });
 
-console.log("From apI key", process.env.RESEND_API_KEY)
 
 export interface SendMailInput {
   to: string;
