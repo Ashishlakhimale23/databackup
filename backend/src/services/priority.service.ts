@@ -31,11 +31,10 @@ function mostUrgent(...priorities: TicketPriority[]): TicketPriority {
 
 export const priorityService = {
   /**
-   * The customer-visible `priority` and the internal triage
-   * `internalPriority` are computed the same way here, but callers may
-   * choose to mask `priority` (e.g. always show requester P3 externally
-   * while internalPriority reflects true VIP urgency) - both fields exist
-   * on Ticket precisely to allow that split if you want it later.
+   * The customer-visible `priority` is computed here from category/role
+   * signals. `internalPriority` (Critical/High/Medium/Low) is a separate
+   * metric now - see internalPriority.service.ts - driven by its own
+   * 5-factor weighted formula rather than this function.
    */
   computePriority(params: {
     categoryDefaultPriority?: TicketPriority | null;
