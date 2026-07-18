@@ -90,6 +90,19 @@ enum Designation {
   EMPLOYEE
 }
 
+// NOTE(added): internal triage metric computed from 5 weighted signals
+// (work-stopping, safety violation, shutdown job, top-management reporter,
+// key client) - see internalPriority.service.ts for the scoring algorithm.
+// Intentionally separate from TicketPriority (P1-P4), which still drives
+// SLA/TAT and can be manually overridden - this metric is purely
+// informational triage context and is never touched by that override.
+enum InternalPriorityLevel {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
 
 
 // client list that was static on the frontend it should be on the backend and the global admin should be able to edit it 
@@ -385,7 +398,9 @@ model Ticket {
 
   status           TicketStatus   @default(OPEN)
   priority         TicketPriority @default(P3)
-  internalPriority TicketPriority @default(P3)
+  // NOTE(changed): was TicketPriority (P1-P4), now a separately computed
+  // triage metric with its own scale - see InternalPriorityLevel above.
+  internalPriority InternalPriorityLevel @default(LOW)
 
   assigneeId       String?
   // NOTE(added): audit trail for how the current assignee was chosen.
@@ -560,6 +575,8 @@ model AdminMessage {
 
   @@index([userId, createdAt])
 }
+
+
 
 
 
