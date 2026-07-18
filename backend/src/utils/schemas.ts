@@ -5,6 +5,20 @@ import { UserRole, SupportLevel, TicketStatus, TicketPriority, Designation } fro
 // file per resource - easier to see the shape a given endpoint expects
 // without cross-referencing multiple files.
 
+// Requests a presigned S3 upload URL for a ticket attachment. fileSize is
+// coerced from the client so a plain JSON number or numeric string both
+// work; the 20MB ceiling is enforced here AND again server-side against
+// the actual object via S3's ContentLength pin (see lib/s3.ts).
+export const presignAttachmentSchema = z.object({
+  fileName: z.string().min(1).max(300),
+  fileType: z.string().min(1).max(150),
+  fileSize: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(20 * 1024 * 1024, "File exceeds the 20MB limit"),
+});
+
 export const createInvitationSchema = z.object({
   email: z.string().email(),
   role: z.nativeEnum(UserRole),
