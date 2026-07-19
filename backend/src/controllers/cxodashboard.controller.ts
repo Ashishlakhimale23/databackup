@@ -16,6 +16,58 @@ export const cxoDashboardController = {
     res.json(departments);
   },
 
+  // GET /cxo-dashboard/analytics
+  // Single lean payload for the Manager/CXO analytics console
+  // (CXODashboardmock.tsx). Returns every department under this CXO, every
+  // category in those departments, and every ticket raised against those
+  // departments — the frontend does all range/status/site/client filtering
+  // and chart aggregation client-side over this set, same shape the mock
+  // data generator used to produce locally.
+  async getAnalytics(req: AuthedRequest, res: Response) {
+    const cxoId = req.user!.id;
+
+    const departments = await prisma.department.findMany({
+      where: { cxoId },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+
+    if (departments.length === 0) {
+      return res.json({ departments: [], categories: [], tickets: [] });
+    }
+
+    const departmentIds = departments.map((d) => d.id);
+
+    const [categories, tickets] = await Promise.all([
+      prisma.ticketCategory.findMany({
+        where: { departmentId: { in: departmentIds } },
+        select: { id: true, name: true, departmentId: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.ticket.findMany({
+        where: { departmentId: { in: departmentIds } },
+        select: {
+          id: true,
+          ticketNumber: true,
+          departmentId: true,
+          categoryId: true,
+          status: true,
+          priority: true,
+          createdAt: true,
+          resolvedAt: true,
+          slaDeadline: true,
+          slaBreached: true,
+          turnOverTime: true, // seconds — see computeTurnOverTimeSeconds
+          site: true,
+          clientName: true,
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    res.json({ departments, categories, tickets });
+  },
+
   // GET /cxo-dashboard/team?departmentId=
   async getTeam(req: AuthedRequest, res: Response) {
     const cxoId = req.user!.id;
