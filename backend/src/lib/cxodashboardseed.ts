@@ -2,7 +2,11 @@
  * seedDemo.ts
  * ---------------------------------------------------------------------------
  * Populates demo data so the CXO analytics console (CXODashboardmock.tsx,
- * fed by GET /cxo-dashboard/analytics) has something real to render.
+ * fed by GET /cxo-dashboard/analytics) AND the agent personal analytics
+ * console (AgentDashboardmock.tsx, fed by GET /agent-dashboard/analytics)
+ * have something real to render — including per-ticket TicketStatusHistory
+ * rows, which is what the agent view's "Where time is going" (time-in-status
+ * by category) chart aggregates over.
  *
  * This is intentionally separate from seed.ts (which just seeds the base
  * department/category/keyword/client taxonomy with no users or tickets) —
@@ -16,6 +20,10 @@
  * Login as the demo CXO with:
  *   email:    cxo.demo@sanghvi.com
  *   password: Demo@12345
+ *
+ * Login as a demo agent (personal analytics) with:
+ *   email:    agent.it.support1@sanghvi.com
+ *   password: Demo@12345
  * ---------------------------------------------------------------------------
  */
 
@@ -28,6 +36,7 @@ import {
 } from "../generated/prisma/client";
 import { prisma } from "./database";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "node:crypto";
 
 const DEMO_PASSWORD = "Demo@12345";
 
@@ -134,6 +143,43 @@ function weightedStatus(): TicketStatus {
 
 const slaHoursForPriority = (p: TicketPriority) =>
   p === TicketPriority.P1 ? 4 : p === TicketPriority.P2 ? 24 : p === TicketPriority.P3 ? 72 : 120;
+
+// Synthesizes {status, changedAt} rows spanning a ticket's lifetime so
+// GET /agent-dashboard/analytics has real TicketStatusHistory to diff into
+// time-in-status segments (grouped by category client-side). Mirrors the
+// status-mix a real ticket would move through for its current status —
+// same shape the old frontend mock generator produced locally per ticket.
+function buildStatusTimeline(
+  status: TicketStatus,
+  createdAt: Date,
+  elapsedHours: number
+): { status: TicketStatus; changedAt: Date }[] {
+  const at = (hoursFromCreated: number) => new Date(createdAt.getTime() + hoursFromCreated * 3600000);
+
+  if (status === TicketStatus.OPEN) {
+    return [{ status: TicketStatus.OPEN, changedAt: createdAt }];
+  }
+  if (status === TicketStatus.ON_HOLD) {
+    return [
+      { status: TicketStatus.OPEN, changedAt: at(0) },
+      { status: TicketStatus.IN_PROGRESS, changedAt: at(elapsedHours * 0.15) },
+      { status: TicketStatus.ON_HOLD, changedAt: at(elapsedHours * 0.5) },
+    ];
+  }
+  if (status === TicketStatus.REOPENED) {
+    return [
+      { status: TicketStatus.OPEN, changedAt: at(0) },
+      { status: TicketStatus.IN_PROGRESS, changedAt: at(elapsedHours * 0.1) },
+      { status: TicketStatus.RESOLVED, changedAt: at(elapsedHours * 0.6) },
+      { status: TicketStatus.REOPENED, changedAt: at(elapsedHours * 0.8) },
+    ];
+  }
+  // IN_PROGRESS or RESOLVED: brief queue time, then worked.
+  return [
+    { status: TicketStatus.OPEN, changedAt: at(0) },
+    { status: TicketStatus.IN_PROGRESS, changedAt: at(elapsedHours * 0.2) },
+  ];
+}
 
 async function main() {
   // ── 1. Requesters (generic pool, not tied to any one department) ───────
@@ -247,15 +293,19 @@ async function main() {
   // ── 4. Tickets — skip entirely if this script already ran once ─────────
   const existingDemoTickets = await prisma.ticket.count({ where: { ticketNumber: { startsWith: "DEMO-" } } });
   if (existingDemoTickets > 0) {
+    const firstDeptName = Object.keys(deptCtxByName)[0];
+    const firstAgentEmail = `agent.${firstDeptName.toLowerCase().replace(/[^a-z]+/g, ".")}1@sanghvi.com`;
     console.log(`Demo tickets already exist (${existingDemoTickets}), skipping ticket generation.`);
-    console.log(`CXO login -> email: ${cxoEmail}  password: ${DEMO_PASSWORD}`);
+    console.log(`CXO login   -> email: ${cxoEmail}  password: ${DEMO_PASSWORD}`);
+    console.log(`Agent login -> email: ${firstAgentEmail}  password: ${DEMO_PASSWORD}`);
     return;
   }
 
   const deptNames = Object.keys(deptCtxByName);
   const now = new Date();
   const TICKET_COUNT = 640;
-  const ticketsData = [];
+  const ticketsData: any[] = [];
+  const statusHistoryData: { id: string; ticketId: string; status: TicketStatus; changedAt: Date }[] = [];
 
   for (let i = 0; i < TICKET_COUNT; i++) {
     const deptName = pick(deptNames);
@@ -288,9 +338,22 @@ async function main() {
       .replace("{site}", site)
       .replace("{client}", client);
 
-    const assigneeId = status === TicketStatus.OPEN ? null : pick(dept.agentIds);
+    // Most OPEN tickets are still assigned (agent has it queued but hasn't
+    // started work) — only a fraction stay in the unassigned intake pool,
+    // otherwise the per-agent analytics view would never show OPEN tickets.
+    const assigneeId = status === TicketStatus.OPEN && rng() < 0.2 ? null : pick(dept.agentIds);
+
+    const ticketId = randomUUID();
+    const elapsedHours = isResolved ? resolutionHours : (now.getTime() - createdAt.getTime()) / 3600000;
+
+    if (assigneeId) {
+      for (const row of buildStatusTimeline(status, createdAt, elapsedHours)) {
+        statusHistoryData.push({ id: randomUUID(), ticketId, ...row });
+      }
+    }
 
     ticketsData.push({
+      id: ticketId,
       ticketNumber: `DEMO-${3000 + i}`,
       title,
       requesterId: pick(requesters).id,
@@ -312,9 +375,17 @@ async function main() {
   }
 
   await prisma.ticket.createMany({ data: ticketsData });
+  if (statusHistoryData.length) {
+    await prisma.ticketStatusHistory.createMany({ data: statusHistoryData });
+  }
+
+  const firstDept = deptNames[0];
+  const firstAgentEmail = `agent.${firstDept.toLowerCase().replace(/[^a-z]+/g, ".")}1@sanghvi.com`;
 
   console.log(`Seeded ${ticketsData.length} demo tickets across ${deptNames.length} departments.`);
-  console.log(`CXO login -> email: ${cxoEmail}  password: ${DEMO_PASSWORD}`);
+  console.log(`Seeded ${statusHistoryData.length} status-history rows for the agent time-in-status view.`);
+  console.log(`CXO login   -> email: ${cxoEmail}  password: ${DEMO_PASSWORD}`);
+  console.log(`Agent login -> email: ${firstAgentEmail}  password: ${DEMO_PASSWORD}`);
 }
 
 main()
