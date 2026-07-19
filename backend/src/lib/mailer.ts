@@ -1,16 +1,9 @@
 import nodemailer from "nodemailer";
 import dotenv from "dotenv"
+import { Resend } from "resend";
 dotenv.config()
 
-export const transporter = nodemailer.createTransport({
-  host: 'smtp.resend.com',
-  port: 465,
-  secure: true,
-  auth: {
-    user: 'resend',
-    pass: process.env.RESEND_API_KEY,
-  },
-});
+export const transporter = new Resend(process.env.RESEND_API_KEY)
 
 
 export interface SendMailInput {
@@ -21,7 +14,7 @@ export interface SendMailInput {
 
 export async function sendMail({ to, subject, html }: SendMailInput) {
   try {
-    await transporter.sendMail({
+    await transporter.emails.send({
       from: 'Sanghvi Movers ltd <noreply@surajweb.in>',
       to,
       subject,
