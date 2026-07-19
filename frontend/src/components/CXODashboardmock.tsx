@@ -376,7 +376,7 @@ function DateRangePicker({ value, onChange }: { value: PresetKey; onChange: (key
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const ref = useRef<HTMLDivElement>(null);
-  const todayStr = NOW.toISOString().slice(0, 10);
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setView("presets"); } };
