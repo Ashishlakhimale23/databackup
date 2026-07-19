@@ -35,7 +35,7 @@ import {
 // Domain types — mirrors the Prisma schema (subset relevant to this view)
 // ============================================================================
 
-type TicketStatus = "OPEN" | "IN_PROGRESS" | "ON_HOLD" | "RESOLVED";
+type TicketStatus = "OPEN" | "REOPENED" | "IN_PROGRESS" | "ON_HOLD" | "RESOLVED";
 type TicketPriority = "P1" | "P2" | "P3" | "P4";
 
 interface Department {
@@ -53,118 +53,78 @@ interface Ticket {
   id: string;
   ticketNumber: string;
   departmentId: string;
-  categoryId: string;
+  categoryId: string | null;
   status: TicketStatus;
   priority: TicketPriority;
   createdAt: Date;
   resolvedAt: Date | null;
-  slaDeadline: Date;
+  slaDeadline: Date | null;
   slaBreached: boolean;
   turnoverHours: number;
   // Captured only at ticket-raise time — never a full master list.
-  state: string;
+  // Sourced from Ticket.site (the free-text location field on the intake
+  // form) — the schema has no separate per-ticket "state" column.
+  site: string;
   clientName: string;
 }
 
 // ============================================================================
-// Deterministic mock data — swap this block for real API/Prisma queries.
-// Manager oversees several departments; no agent- or manager-level
-// performance is computed anywhere in this file, only department rollups.
+// Live data — pulled from GET /cxo-dashboard/analytics, scoped server-side
+// to the departments this CXO/manager owns (Department.cxoId). The API
+// returns lean rows; everything below (range/status/site/client filtering,
+// KPI + chart aggregation) still happens client-side over that set, exactly
+// as it did over the old in-memory mock arrays.
 // ============================================================================
 
-function mulberry32(seed: number) {
-  return function () {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const rng = mulberry32(20260719);
-const pick = <T,>(arr: T[]): T => arr[Math.floor(rng() * arr.length)];
-const NOW = new Date();
+const API_BASE = "http://localhost:3000";
 
-// The Manager's departments
-const ALL_DEPARTMENTS: Department[] = [
-  { id: "d1", name: "IT Support" },
-  { id: "d2", name: "Facilities & Admin" },
-  { id: "d3", name: "HR Operations" },
-  { id: "d4", name: "Finance & Accounts" },
-];
-
-const DEPT_CATEGORIES: Record<string, string[]> = {
-  d1: ["Network & VPN", "Hardware", "Software Install", "Access & Permissions"],
-  d2: ["Maintenance Request", "Housekeeping", "Security & Access", "Asset Request"],
-  d3: ["Payroll Query", "Leave & Attendance", "Onboarding", "Policy Clarification"],
-  d4: ["Reimbursement", "Vendor Payment", "Invoice Query", "Budget Approval"],
-};
-
-const ALL_CATEGORIES: Category[] = Object.entries(DEPT_CATEGORIES).flatMap(([deptId, cats], di) =>
-  cats.map((name, ci) => ({ id: `c${di * 4 + ci + 1}`, name, departmentId: deptId }))
-);
-
-// Pools used only to *generate* mock tickets — the UI never reads these
-// directly for filter options. Filter option lists are always derived from
-// the tickets actually raised, matching how the real endpoint would do a
-// `DISTINCT` over tickets in scope rather than joining a full master table.
-const STATE_POOL = [
-  "Maharashtra", "Karnataka", "Delhi", "Tamil Nadu", "Telangana",
-  "Gujarat", "West Bengal", "Uttar Pradesh", "Haryana", "Rajasthan",
-];
-const CLIENT_POOL = [
-  "Nimbus Logistics", "Everest Foods Ltd", "Solstice Retail", "Vantage Manufacturing",
-  "BluePeak Textiles", "Coral Bay Hospitality", "Meridian Pharma", "Zenith Motors",
-  "Harbor Freight Co", "Crestline Realty", "Oakwood Analytics", "Silverline Insurance",
-];
-
-const STATUS_WEIGHTS: [TicketStatus, number][] = [
-  ["OPEN", 0.26],
-  ["IN_PROGRESS", 0.24],
-  ["ON_HOLD", 0.11],
-  ["RESOLVED", 0.39],
-];
-function weightedStatus(): TicketStatus {
-  const r = rng();
-  let acc = 0;
-  for (const [s, w] of STATUS_WEIGHTS) {
-    acc += w;
-    if (r <= acc) return s;
-  }
-  return "RESOLVED";
+interface RawTicket {
+  id: string;
+  ticketNumber: string;
+  departmentId: string;
+  categoryId: string | null;
+  status: TicketStatus;
+  priority: TicketPriority;
+  createdAt: string;
+  resolvedAt: string | null;
+  slaDeadline: string | null;
+  slaBreached: boolean;
+  turnOverTime: number | null; // seconds, only meaningful once resolved
+  site: string | null;
+  clientName: string;
 }
 
-const ALL_TICKETS: Ticket[] = Array.from({ length: 620 }, (_, i) => {
-  const dept = pick(ALL_DEPARTMENTS);
-  const deptCats = ALL_CATEGORIES.filter((c) => c.departmentId === dept.id);
-  const daysAgo = Math.floor(rng() * 90);
-  const createdAt = new Date(NOW.getTime() - daysAgo * 86400000 - Math.floor(rng() * 86400000));
-  const status = weightedStatus();
-  const priority = pick<TicketPriority>(["P1", "P2", "P3", "P4", "P2", "P3"]);
-  const slaHours = priority === "P1" ? 4 : priority === "P2" ? 24 : priority === "P3" ? 72 : 120;
-  const slaDeadline = new Date(createdAt.getTime() + slaHours * 3600000);
-  const isResolved = status === "RESOLVED";
-  const resolutionHours = Math.max(0.5, rng() * slaHours * 1.6);
-  const resolvedAt = isResolved ? new Date(createdAt.getTime() + resolutionHours * 3600000) : null;
-  const referenceNow = isResolved ? (resolvedAt as Date) : NOW;
-  const slaBreached = referenceNow.getTime() > slaDeadline.getTime();
+interface AnalyticsResponse {
+  departments: Department[];
+  categories: Category[];
+  tickets: RawTicket[];
+}
 
+function parseTicket(raw: RawTicket): Ticket {
+  const createdAt = new Date(raw.createdAt);
+  const resolvedAt = raw.resolvedAt ? new Date(raw.resolvedAt) : null;
+  const isResolved = raw.status === "RESOLVED" && !!resolvedAt;
+  const turnoverHours = isResolved
+    ? raw.turnOverTime != null
+      ? raw.turnOverTime / 3600
+      : (resolvedAt!.getTime() - createdAt.getTime()) / 3600000
+    : 0;
   return {
-    id: `t${i}`,
-    ticketNumber: `TCK-${(2000 + i).toString()}`,
-    departmentId: dept.id,
-    categoryId: pick(deptCats).id,
-    status,
-    priority,
+    id: raw.id,
+    ticketNumber: raw.ticketNumber,
+    departmentId: raw.departmentId,
+    categoryId: raw.categoryId,
+    status: raw.status,
+    priority: raw.priority,
     createdAt,
     resolvedAt,
-    slaDeadline,
-    slaBreached,
-    turnoverHours: isResolved ? resolutionHours : 0,
-    state: pick(STATE_POOL),
-    clientName: pick(CLIENT_POOL),
+    slaDeadline: raw.slaDeadline ? new Date(raw.slaDeadline) : null,
+    slaBreached: raw.slaBreached,
+    turnoverHours,
+    site: raw.site || "Unspecified",
+    clientName: raw.clientName,
   };
-});
+}
 
 // ============================================================================
 // Formatting helpers
@@ -239,6 +199,7 @@ const TOOLTIP_STYLE = {
 
 const STATUS_COLOR: Record<TicketStatus, string> = {
   OPEN: C.primary500,
+  REOPENED: C.destructive500,
   IN_PROGRESS: C.primary700,
   ON_HOLD: C.warning500,
   RESOLVED: C.success500,
@@ -246,6 +207,7 @@ const STATUS_COLOR: Record<TicketStatus, string> = {
 
 const STATUS_LABEL: Record<TicketStatus, string> = {
   OPEN: "Open",
+  REOPENED: "Reopened",
   IN_PROGRESS: "In progress",
   ON_HOLD: "On hold",
   RESOLVED: "Resolved",
@@ -625,9 +587,60 @@ function MultiSelectFilter({
 // Main analytics view
 // ============================================================================
 
-const STATUS_OPTIONS: TicketStatus[] = ["OPEN", "IN_PROGRESS", "ON_HOLD", "RESOLVED"];
+const STATUS_OPTIONS: TicketStatus[] = ["OPEN", "REOPENED", "IN_PROGRESS", "ON_HOLD", "RESOLVED"];
 
-export default function ManagerAnalyticsMock() {
+interface ManagerAnalyticsProps {
+  token: string;
+  apiFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+}
+
+export default function ManagerAnalyticsMock({ token, apiFetch }: ManagerAnalyticsProps) {
+  const requestFn = apiFetch || window.fetch;
+
+  // ── live data ───────────────────────────────────────────────────────────
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [allTickets, setAllTickets] = useState<Ticket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [lastLoadedAt, setLastLoadedAt] = useState<Date>(new Date());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAnalytics() {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await requestFn(`${API_BASE}/cxo-dashboard/analytics`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.error || body?.message || `Failed to load analytics (${res.status})`);
+        }
+        const data: AnalyticsResponse = await res.json();
+        if (cancelled) return;
+        setDepartments(data.departments);
+        setCategories(data.categories);
+        setAllTickets(data.tickets.map(parseTicket));
+        setLastLoadedAt(new Date());
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || "Failed to load analytics");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    loadAnalytics();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const ALL_DEPARTMENTS = departments;
+  const ALL_CATEGORIES = categories;
+  const ALL_TICKETS = allTickets;
+  const NOW = lastLoadedAt;
+
   // ── date range ──────────────────────────────────────────────────────────
   const [selectedPreset, setSelectedPreset] = useState<PresetKey>("thismonth");
   const [customFrom, setCustomFrom] = useState<Date | undefined>();
@@ -653,14 +666,14 @@ export default function ManagerAnalyticsMock() {
   const inRange = (d: Date, from: Date, to: Date) => d.getTime() >= from.getTime() && d.getTime() <= to.getTime();
 
   // Departments currently in scope of the department filter — everything
-  // downstream (state/client option lists, department chart) respects this.
+  // downstream (site/client option lists, department chart) respects this.
   const deptScopedTickets = useMemo(
     () => (selectedDeptIds.length === 0 ? ALL_TICKETS : ALL_TICKETS.filter(t => selectedDeptIds.includes(t.departmentId))),
-    [selectedDeptIds]
+    [selectedDeptIds, ALL_TICKETS]
   );
 
   const availableStates = useMemo(
-    () => Array.from(new Set(deptScopedTickets.map(t => t.state))).sort().map(s => ({ id: s, label: s })),
+    () => Array.from(new Set(deptScopedTickets.map(t => t.site))).sort().map(s => ({ id: s, label: s })),
     [deptScopedTickets]
   );
   const availableClients = useMemo(
@@ -669,7 +682,7 @@ export default function ManagerAnalyticsMock() {
   );
 
   // Prune stale selections when the department filter narrows the available
-  // states/clients (keeps the filter bar internally consistent).
+  // sites/clients (keeps the filter bar internally consistent).
   useEffect(() => {
     const validStates = new Set(availableStates.map(s => s.id));
     setSelectedStates(prev => prev.filter(s => validStates.has(s)));
@@ -684,15 +697,15 @@ export default function ManagerAnalyticsMock() {
     return ALL_TICKETS.filter(t =>
       (selectedDeptIds.length === 0 || selectedDeptIds.includes(t.departmentId)) &&
       (selectedStatuses.length === 0 || selectedStatuses.includes(t.status)) &&
-      (selectedStates.length === 0 || selectedStates.includes(t.state)) &&
+      (selectedStates.length === 0 || selectedStates.includes(t.site)) &&
       (selectedClients.length === 0 || selectedClients.includes(t.clientName)) &&
       inRange(t.createdAt, rangeStart, rangeEnd)
     );
-  }, [selectedDeptIds, selectedStatuses, selectedStates, selectedClients, rangeStart, rangeEnd]);
+  }, [ALL_TICKETS, selectedDeptIds, selectedStatuses, selectedStates, selectedClients, rangeStart, rangeEnd]);
 
   const scopedDepartments = useMemo(
     () => (selectedDeptIds.length === 0 ? ALL_DEPARTMENTS : ALL_DEPARTMENTS.filter(d => selectedDeptIds.includes(d.id))),
-    [selectedDeptIds]
+    [selectedDeptIds, ALL_DEPARTMENTS]
   );
 
   const deptLabel = selectedDeptIds.length === 0
@@ -728,7 +741,7 @@ export default function ManagerAnalyticsMock() {
 
   const stateDistribution = useMemo(
     () => availableStates
-      .map(s => ({ name: s.id, count: TICKETS.filter(t => t.state === s.id).length }))
+      .map(s => ({ name: s.id, count: TICKETS.filter(t => t.site === s.id).length }))
       .filter(s => s.count > 0)
       .sort((a, b) => b.count - a.count)
       .slice(0, 10),
@@ -759,7 +772,7 @@ export default function ManagerAnalyticsMock() {
     return resolved.length ? resolved.reduce((s, t) => s + t.turnoverHours, 0) / resolved.length : 0;
   }, [TICKETS]);
 
-  const [tatDeptId, setTatDeptId] = useState<string>(ALL_DEPARTMENTS[0].id);
+  const [tatDeptId, setTatDeptId] = useState<string>("");
   useEffect(() => {
     if (scopedDepartments.length && !scopedDepartments.some(d => d.id === tatDeptId)) {
       setTatDeptId(scopedDepartments[0].id);
@@ -784,6 +797,34 @@ export default function ManagerAnalyticsMock() {
     setSelectedStates([]);
     setSelectedClients([]);
   };
+
+  if (loading && ALL_TICKETS.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center font-sans" style={{ backgroundColor: C.neutral50 }}>
+        <p className="text-sm font-mono" style={{ color: C.neutral400 }}>Loading analytics…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center font-sans px-6" style={{ backgroundColor: C.neutral50 }}>
+        <div className="bg-white rounded-xl shadow-sm p-6 max-w-md text-center" style={{ border: `1px solid ${C.neutral200}` }}>
+          <AlertTriangle className="w-6 h-6 mx-auto mb-3" style={{ color: C.destructive500 }} />
+          <p className="text-sm font-medium mb-1" style={{ color: C.neutral800 }}>Couldn't load analytics</p>
+          <p className="text-xs" style={{ color: C.neutral500 }}>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (ALL_DEPARTMENTS.length === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center font-sans px-6" style={{ backgroundColor: C.neutral50 }}>
+        <p className="text-sm" style={{ color: C.neutral500 }}>No departments are assigned to you yet.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen font-sans" style={{ backgroundColor: C.neutral50, color: C.neutral900 }}>
@@ -821,7 +862,7 @@ export default function ManagerAnalyticsMock() {
             onChange={setSelectedStatuses}
           />
           <MultiSelectFilter
-            label="States"
+            label="Site"
             icon={<MapPin className="w-3.5 h-3.5" />}
             options={availableStates}
             selected={selectedStates}
@@ -901,7 +942,7 @@ export default function ManagerAnalyticsMock() {
 
           {/* State + client volume */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <SectionCard title="Tickets by state" subtitle="Only states actually captured on raised tickets, top 10 shown">
+            <SectionCard title="Tickets by site" subtitle="Only sites actually captured on raised tickets, top 10 shown">
               {stateDistribution.length === 0 ? (
                 <p className="text-sm py-8 text-center" style={{ color: C.neutral400 }}>No tickets match the current filters</p>
               ) : (
