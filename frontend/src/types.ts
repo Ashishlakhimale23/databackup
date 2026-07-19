@@ -99,6 +99,7 @@ export interface Client {
   id: string;
   name: string;
   isKeyClient: boolean;
+  isWindClient: boolean;
   projects: Project[];
   createdAt: string;
 }
