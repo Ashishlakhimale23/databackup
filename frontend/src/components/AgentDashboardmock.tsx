@@ -42,6 +42,7 @@ import {
 type TicketStatus = "OPEN" | "IN_PROGRESS" | "ON_HOLD" | "RESOLVED" | "REOPENED";
 type TicketPriority = "LOW" | "MEDIUM" | "HIGH" | "URGENT";
 type TicketTab = "OPEN" | "BREACHED" | "ALL";
+type TicketCategoryName = string;
 
 type DateRangeKey =
   | "Today"
@@ -71,6 +72,7 @@ interface MockTicket {
   requester: string;
   priority: TicketPriority;
   status: TicketStatus;
+  category: TicketCategoryName;
   createdAt: number;
   dueAt: number;
   resolvedAt: number | null;
@@ -132,6 +134,24 @@ const PRIORITY_META: Record<TicketPriority, PriorityMeta> = {
   URGENT: { label: "Urgent", fg: C.destructive[700], bg: C.destructive[100] },
 };
 
+// Category names now come from real data (backend TicketCategory rows) as
+// well as the local mock generator, so instead of a fixed lookup table we
+// pick a stable color per name from a small palette (same name -> same
+// color across renders/sessions, via a cheap string hash).
+const CATEGORY_PALETTE: { fg: string; bg: string; dot: string }[] = [
+  { fg: C.primary[800], bg: C.primary[100], dot: C.primary[600] },
+  { fg: C.warning[800], bg: C.warning[100], dot: C.warning[500] },
+  { fg: C.destructive[800], bg: C.destructive[100], dot: C.destructive[500] },
+  { fg: C.success[800], bg: C.success[100], dot: C.success[600] },
+  { fg: C.neutral[700], bg: C.neutral[200], dot: C.neutral[500] },
+  { fg: C.primary[900], bg: C.primary[200], dot: C.primary[400] },
+];
+function categoryMeta(name: TicketCategoryName): { fg: string; bg: string; dot: string } {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return CATEGORY_PALETTE[hash % CATEGORY_PALETTE.length];
+}
+
 const STATUS_ORDER: TicketStatus[] = ["OPEN", "IN_PROGRESS", "ON_HOLD", "RESOLVED", "REOPENED"];
 const PRIORITY_ORDER: TicketPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const OPEN_STATUSES: TicketStatus[] = ["OPEN", "IN_PROGRESS", "ON_HOLD", "REOPENED"];
@@ -168,6 +188,27 @@ const SUBJECTS: string[] = [
 ];
 const REQUESTERS: string[] = ["R. Sinha", "A. Verma", "M. Iqbal", "K. Das", "S. Rao", "P. Nair", "T. Bose", "N. Kapoor", "V. Menon", "L. Chawla", "H. Pillai", "J. Fernandes"];
 
+const SUBJECT_CATEGORY: Record<string, TicketCategoryName> = {
+  "Payment gateway timeout on checkout": "Billing",
+  "Unable to reset password via email link": "Account Access",
+  "Export to CSV missing last column": "Data & Reports",
+  "Dashboard widgets not loading on Safari": "Technical",
+  "Bulk invoice upload fails at row 200": "Billing",
+  "Typo in monthly invoice PDF footer": "Billing",
+  "API rate limit hit during sync job": "Integrations",
+  "Refund not reflecting after 3 days": "Billing",
+  "Add SSO for enterprise workspace": "Feature Request",
+  "Notification emails delayed by ~1hr": "Technical",
+  "Two-factor login loop on mobile app": "Account Access",
+  "Custom report builder throws 500 error": "Data & Reports",
+  "Slack integration stopped posting alerts": "Integrations",
+  "Duplicate entries after CSV import": "Data & Reports",
+  "Search results not updating live": "Technical",
+  "Attachment upload capped unexpectedly": "Technical",
+  "Timezone mismatch in scheduled reports": "Data & Reports",
+  "User role permissions not saving": "Account Access",
+};
+
 function mulberry32(seed: number): () => number {
   return function () {
     seed |= 0;
@@ -195,6 +236,8 @@ function buildTicket(i: number): MockTicket {
   const createdAt = NOW - ageDays * DAY_MS;
   const priority = pick(PRIORITY_ORDER);
   const status = statusForAge(ageDays);
+  const subject = pick(SUBJECTS);
+  const category = SUBJECT_CATEGORY[subject] ?? "Technical";
   const baseTat = BASE_TAT_HOURS[priority];
   const tatHours = Math.max(0.5, baseTat + (rand() - 0.4) * baseTat);
   const dueAt = createdAt + SLA_HOURS[priority] * 3600000;
@@ -221,10 +264,11 @@ function buildTicket(i: number): MockTicket {
 
   return {
     id: `TCK-${4200 + i}`,
-    subject: pick(SUBJECTS),
+    subject,
     requester: pick(REQUESTERS),
     priority,
     status,
+    category,
     createdAt,
     dueAt,
     resolvedAt,
@@ -236,6 +280,75 @@ function buildTicket(i: number): MockTicket {
 }
 
 const TICKET_POOL: MockTicket[] = Array.from({ length: 240 }, (_, i) => buildTicket(i)).sort((a, b) => b.createdAt - a.createdAt);
+
+/* ------------------------------------------------------------------ */
+/*  Real data — GET /agent-dashboard/analytics                        */
+/*  Maps the backend's lean payload (raw tickets + status-history      */
+/*  segments) onto the same MockTicket shape the chart/table code      */
+/*  already consumes, so every useMemo below works unmodified whether  */
+/*  it's fed local mock data or the real API response.                 */
+/* ------------------------------------------------------------------ */
+const API_BASE = "http://localhost:3000";
+
+// Backend TicketPriority (P1-P4, P1 fastest) -> this file's TicketPriority.
+const API_PRIORITY_MAP: Record<string, TicketPriority> = { P1: "URGENT", P2: "HIGH", P3: "MEDIUM", P4: "LOW" };
+
+interface ApiStatusSegment {
+  status: TicketStatus;
+  hours: number;
+}
+
+interface ApiTicket {
+  id: string;
+  ticketNumber: string;
+  subject: string;
+  requester: string;
+  priority: string; // "P1" | "P2" | "P3" | "P4"
+  status: TicketStatus;
+  categoryId: string | null;
+  categoryName: string;
+  createdAt: string;
+  dueAt: string | null;
+  dueInHrs: number | null;
+  resolvedAt: string | null;
+  tatHours: number | null;
+  slaBreached: boolean;
+  segments: ApiStatusSegment[];
+}
+
+interface AgentAnalyticsResponse {
+  agent: { id: string; fullName: string };
+  department: { id: string; name: string } | null;
+  categories: { id: string; name: string }[];
+  tickets: ApiTicket[];
+  departmentAvgTatHours: number | null;
+}
+
+function mapApiTicketToMockTicket(t: ApiTicket): MockTicket {
+  const createdAt = new Date(t.createdAt).getTime();
+  const dueAt = t.dueAt ? new Date(t.dueAt).getTime() : createdAt + SLA_HOURS[API_PRIORITY_MAP[t.priority] ?? "MEDIUM"] * 3600000;
+  const resolvedAt = t.resolvedAt ? new Date(t.resolvedAt).getTime() : null;
+  // tatHours is only set server-side once a ticket resolves — for tickets
+  // still open, fall back to elapsed time so KPI/trend averages (which
+  // expect every ticket to carry a number) still have something sane.
+  const tatHours = t.tatHours ?? Math.max(0.5, (Date.now() - createdAt) / 3600000);
+
+  return {
+    id: t.ticketNumber,
+    subject: t.subject,
+    requester: t.requester,
+    priority: API_PRIORITY_MAP[t.priority] ?? "MEDIUM",
+    status: t.status,
+    category: t.categoryName,
+    createdAt,
+    dueAt,
+    resolvedAt,
+    tatHours: Number(tatHours.toFixed(1)),
+    dueInHrs: t.dueInHrs ?? Math.round((dueAt - Date.now()) / 3600000),
+    slaBreached: t.slaBreached,
+    segments: t.segments,
+  };
+}
 
 const RANGE_WINDOWS: Record<Exclude<DateRangeKey, "Custom Range…">, [since: number, until: number]> = {
   Today: [1, 0],
@@ -522,10 +635,49 @@ function DateRangePicker({ activeKey, displayLabel, onSelectPreset, onApplyCusto
 /* ------------------------------------------------------------------ */
 /*  Main dashboard                                                     */
 /* ------------------------------------------------------------------ */
-export default function AgentDashboard() {
+interface AgentDashboardProps {
+  token?: string;
+  apiFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+}
+
+export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps = {}) {
   const [range, setRange] = useState<DateRangeKey>("This Week");
   const [customBounds, setCustomBounds] = useState<CustomBounds | null>(null);
   const [tab, setTab] = useState<TicketTab>("OPEN");
+
+  // Starts out on the local mock pool so the dashboard renders immediately
+  // (and still works standalone, with no token, e.g. in Storybook/demo
+  // mode). When a token is supplied, GET /agent-dashboard/analytics swaps
+  // this out for the signed-in agent's real tickets — every chart below
+  // is driven off this one array either way.
+  const [ticketPool, setTicketPool] = useState<MockTicket[]>(TICKET_POOL);
+  const [departmentAvgTatHours, setDepartmentAvgTatHours] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    const requestFn = apiFetch || window.fetch;
+
+    (async () => {
+      try {
+        const res = await requestFn(`${API_BASE}/agent-dashboard/analytics`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok || cancelled) return;
+        const data: AgentAnalyticsResponse = await res.json();
+        if (cancelled) return;
+        setTicketPool(data.tickets.map(mapApiTicketToMockTicket));
+        setDepartmentAvgTatHours(data.departmentAvgTatHours);
+      } catch {
+        // Backend unreachable — keep showing the local mock pool rather
+        // than an empty dashboard.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, apiFetch]);
 
   const { start, end } = useMemo(() => {
     if (range === "Custom Range…" && customBounds) return { start: customBounds.start, end: customBounds.end };
@@ -539,12 +691,12 @@ export default function AgentDashboard() {
     setRange("Custom Range…");
   }
 
-  const ticketsInRange = useMemo(() => TICKET_POOL.filter((t) => t.createdAt >= start && t.createdAt <= end), [start, end]);
+  const ticketsInRange = useMemo(() => ticketPool.filter((t) => t.createdAt >= start && t.createdAt <= end), [ticketPool, start, end]);
 
   const prevTickets = useMemo(() => {
     const span = end - start;
-    return TICKET_POOL.filter((t) => t.createdAt >= start - span && t.createdAt < start);
-  }, [start, end]);
+    return ticketPool.filter((t) => t.createdAt >= start - span && t.createdAt < start);
+  }, [ticketPool, start, end]);
 
   const kpis = useMemo(() => {
     const open = ticketsInRange.filter((t) => OPEN_STATUSES.includes(t.status)).length;
@@ -588,17 +740,34 @@ export default function AgentDashboard() {
     return ticketsInRange.filter((t) => t.slaBreached);
   }, [ticketsInRange, tab]);
 
-  const featuredTimeInStatus = useMemo(() => ticketsInRange.filter((t) => OPEN_STATUSES.includes(t.status)).slice(0, 5), [ticketsInRange]);
+  const timeByCategory = useMemo(() => {
+    const openTickets = ticketsInRange.filter((t) => OPEN_STATUSES.includes(t.status));
+    const categoryNames = Array.from(new Set(openTickets.map((t) => t.category)));
+    const rows = categoryNames.map((category) => {
+      const ticketsInCategory = openTickets.filter((t) => t.category === category);
+      const totals: Partial<Record<TicketStatus, number>> = {};
+      let total = 0;
+      ticketsInCategory.forEach((t) => {
+        t.segments.forEach((seg) => {
+          totals[seg.status] = (totals[seg.status] ?? 0) + seg.hours;
+          total += seg.hours;
+        });
+      });
+      const segments: StatusSegment[] = STATUS_ORDER.filter((s) => totals[s]).map((s) => ({ status: s, hours: totals[s] as number }));
+      return { category, ticketCount: ticketsInCategory.length, total, segments };
+    }).filter((row) => row.ticketCount > 0);
+    return rows.sort((a, b) => b.total - a.total);
+  }, [ticketsInRange]);
 
   const deptComparison = useMemo(() => {
     const you = Number(kpis.avgTat);
-    const dept = Number((you * 1.18 + 0.6).toFixed(1));
+    const dept = departmentAvgTatHours ?? Number((you * 1.18 + 0.6).toFixed(1));
     return [
       { name: "You", value: you, fill: C.primary[600] },
       { name: "Dept avg", value: dept, fill: C.neutral[300] },
       { name: "Target", value: DEPT_TARGET_TAT, fill: C.warning[400] },
     ];
-  }, [kpis.avgTat]);
+  }, [kpis.avgTat, departmentAvgTatHours]);
 
   const deptSnapshot = useMemo(() => {
     const deptOpen = Math.round(kpis.open * 4.6 + 3);
@@ -744,36 +913,34 @@ export default function AgentDashboard() {
               </div>
             </SectionCard>
 
-            <SectionCard title="Where time is going" subtitle="Time-in-status for your active tickets — spot what's stuck in queue vs. actually being worked">
+            <SectionCard title="Where time is going" subtitle="Time-in-status by ticket category — spot which categories are stuck in queue vs. actually being worked">
               <div className="flex flex-col gap-3">
-                {featuredTimeInStatus.length === 0 && (
+                {timeByCategory.length === 0 && (
                   <div className="text-xs py-3 text-center" style={{ color: C.neutral[400] }}>
                     No open tickets created in this range.
                   </div>
                 )}
-                {featuredTimeInStatus.map((t) => {
-                  const total = t.segments.reduce((s, seg) => s + seg.hours, 0);
-                  return (
-                    <div key={t.id} className="flex items-center gap-3">
-                      <div className="w-32 shrink-0">
-                        <div className="text-xs font-semibold" style={{ color: C.neutral[800] }}>
-                          {t.id}
-                        </div>
-                        <div className="text-[11px] truncate" style={{ color: C.neutral[400] }}>
-                          {t.subject}
-                        </div>
+                {timeByCategory.map((row) => (
+                  <div key={row.category} className="flex items-center gap-3">
+                    <div className="w-32 shrink-0">
+                      <div className="text-xs font-semibold flex items-center gap-1.5" style={{ color: C.neutral[800] }}>
+                        <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: categoryMeta(row.category).dot }} />
+                        <span className="truncate">{row.category}</span>
                       </div>
-                      <div className="flex-1 h-3 rounded-full overflow-hidden flex" style={{ backgroundColor: C.neutral[100] }}>
-                        {t.segments.map((seg, i) => (
-                          <div key={i} style={{ width: `${(seg.hours / total) * 100}%`, backgroundColor: STATUS_META[seg.status].dot }} title={`${STATUS_META[seg.status].label}: ${seg.hours.toFixed(1)}h`} />
-                        ))}
-                      </div>
-                      <div className="w-14 text-right text-xs font-medium tabular-nums" style={{ color: C.neutral[500] }}>
-                        {total.toFixed(1)}h
+                      <div className="text-[11px] truncate" style={{ color: C.neutral[400] }}>
+                        {row.ticketCount} ticket{row.ticketCount === 1 ? "" : "s"}
                       </div>
                     </div>
-                  );
-                })}
+                    <div className="flex-1 h-3 rounded-full overflow-hidden flex" style={{ backgroundColor: C.neutral[100] }}>
+                      {row.segments.map((seg, i) => (
+                        <div key={i} style={{ width: `${(seg.hours / row.total) * 100}%`, backgroundColor: STATUS_META[seg.status].dot }} title={`${STATUS_META[seg.status].label}: ${seg.hours.toFixed(1)}h`} />
+                      ))}
+                    </div>
+                    <div className="w-14 text-right text-xs font-medium tabular-nums" style={{ color: C.neutral[500] }}>
+                      {row.total.toFixed(1)}h
+                    </div>
+                  </div>
+                ))}
                 <div className="flex items-center gap-4 pt-2 mt-1 border-t" style={{ borderColor: C.neutral[100] }}>
                   {(["OPEN", "IN_PROGRESS", "ON_HOLD"] as TicketStatus[]).map((s) => (
                     <span key={s} className="flex items-center gap-1.5 text-[11px]" style={{ color: C.neutral[500] }}>
