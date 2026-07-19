@@ -22,11 +22,9 @@ cxoRouter.get("/risk-metrics",requireAuth, asyncHandler(cxoDashboardController.g
 cxoRouter.get("/department-comparison",requireAuth, asyncHandler(cxoDashboardController.getDepartmentComparison));
 
 cxoRouter.get("/departments",requireAuth, asyncHandler(cxoDashboardController.getDepartments)); 
+cxoRouter.get("/analytics",requireAuth, asyncHandler(cxoDashboardController.getAnalytics));
 cxoRouter.get("/team",requireAuth, asyncHandler(cxoDashboardController.getTeam));
 cxoRouter.get("/tickets",requireAuth, asyncHandler(cxoDashboardController.getDepartmentTickets));
 cxoRouter.get("/user/:userId/tickets",requireAuth, asyncHandler(cxoDashboardController.getUserTickets));
 cxoRouter.post("/reassign", requireAuth,asyncHandler(cxoDashboardController.reassignTicket));
-
-
-
 
