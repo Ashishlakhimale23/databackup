@@ -157,136 +157,13 @@ const PRIORITY_ORDER: TicketPriority[] = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 const OPEN_STATUSES: TicketStatus[] = ["OPEN", "IN_PROGRESS", "ON_HOLD", "REOPENED"];
 const SLA_HOURS: Record<TicketPriority, number> = { URGENT: 4, HIGH: 8, MEDIUM: 24, LOW: 48 };
 const BASE_TAT_HOURS: Record<TicketPriority, number> = { URGENT: 4, HIGH: 7, MEDIUM: 12, LOW: 20 };
-const DEPT_TARGET_TAT = 8;
 const DAY_MS = 86400000;
 const NOW = Date.now();
 
 /* ------------------------------------------------------------------ */
-/*  Mock data generator                                                */
-/*  Swap TICKET_POOL and the useMemo blocks in the component for real  */
-/*  fetches once the Prisma-backed route is wired up.                  */
-/* ------------------------------------------------------------------ */
-const SUBJECTS: string[] = [
-  "Payment gateway timeout on checkout",
-  "Unable to reset password via email link",
-  "Export to CSV missing last column",
-  "Dashboard widgets not loading on Safari",
-  "Bulk invoice upload fails at row 200",
-  "Typo in monthly invoice PDF footer",
-  "API rate limit hit during sync job",
-  "Refund not reflecting after 3 days",
-  "Add SSO for enterprise workspace",
-  "Notification emails delayed by ~1hr",
-  "Two-factor login loop on mobile app",
-  "Custom report builder throws 500 error",
-  "Slack integration stopped posting alerts",
-  "Duplicate entries after CSV import",
-  "Search results not updating live",
-  "Attachment upload capped unexpectedly",
-  "Timezone mismatch in scheduled reports",
-  "User role permissions not saving",
-];
-const REQUESTERS: string[] = ["R. Sinha", "A. Verma", "M. Iqbal", "K. Das", "S. Rao", "P. Nair", "T. Bose", "N. Kapoor", "V. Menon", "L. Chawla", "H. Pillai", "J. Fernandes"];
-
-const SUBJECT_CATEGORY: Record<string, TicketCategoryName> = {
-  "Payment gateway timeout on checkout": "Billing",
-  "Unable to reset password via email link": "Account Access",
-  "Export to CSV missing last column": "Data & Reports",
-  "Dashboard widgets not loading on Safari": "Technical",
-  "Bulk invoice upload fails at row 200": "Billing",
-  "Typo in monthly invoice PDF footer": "Billing",
-  "API rate limit hit during sync job": "Integrations",
-  "Refund not reflecting after 3 days": "Billing",
-  "Add SSO for enterprise workspace": "Feature Request",
-  "Notification emails delayed by ~1hr": "Technical",
-  "Two-factor login loop on mobile app": "Account Access",
-  "Custom report builder throws 500 error": "Data & Reports",
-  "Slack integration stopped posting alerts": "Integrations",
-  "Duplicate entries after CSV import": "Data & Reports",
-  "Search results not updating live": "Technical",
-  "Attachment upload capped unexpectedly": "Technical",
-  "Timezone mismatch in scheduled reports": "Data & Reports",
-  "User role permissions not saving": "Account Access",
-};
-
-function mulberry32(seed: number): () => number {
-  return function () {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-const rand = mulberry32(1337);
-function pick<T>(arr: T[]): T {
-  return arr[Math.floor(rand() * arr.length)];
-}
-
-function statusForAge(ageDays: number): TicketStatus {
-  const r = rand();
-  if (ageDays < 0.5) return r < 0.7 ? "OPEN" : "IN_PROGRESS";
-  if (ageDays < 2) return r < 0.15 ? "OPEN" : r < 0.65 ? "IN_PROGRESS" : r < 0.85 ? "ON_HOLD" : "RESOLVED";
-  if (ageDays < 10) return r < 0.15 ? "IN_PROGRESS" : r < 0.6 ? "RESOLVED" : r < 0.9 ? "RESOLVED" : "REOPENED";
-  return r < 0.25 ? "RESOLVED" : r < 0.85 ? "RESOLVED" : "REOPENED";
-}
-
-function buildTicket(i: number): MockTicket {
-  const ageDays = rand() * 150;
-  const createdAt = NOW - ageDays * DAY_MS;
-  const priority = pick(PRIORITY_ORDER);
-  const status = statusForAge(ageDays);
-  const subject = pick(SUBJECTS);
-  const category = SUBJECT_CATEGORY[subject] ?? "Technical";
-  const baseTat = BASE_TAT_HOURS[priority];
-  const tatHours = Math.max(0.5, baseTat + (rand() - 0.4) * baseTat);
-  const dueAt = createdAt + SLA_HOURS[priority] * 3600000;
-  const isResolvedLike = status === "RESOLVED" ;
-  const resolvedAt = isResolvedLike ? createdAt + tatHours * 3600000 : null;
-  const elapsedHours = isResolvedLike ? tatHours : (NOW - createdAt) / 3600000;
-  const slaBreached = isResolvedLike ? (resolvedAt as number) > dueAt : NOW > dueAt;
-
-  const segments: StatusSegment[] = [];
-  if (status === "OPEN") {
-    segments.push({ status: "OPEN", hours: elapsedHours });
-  } else if (status === "ON_HOLD") {
-    segments.push({ status: "OPEN", hours: elapsedHours * 0.15 }, { status: "IN_PROGRESS", hours: elapsedHours * 0.35 }, { status: "ON_HOLD", hours: elapsedHours * 0.5 });
-  } else if (status === "REOPENED") {
-    segments.push(
-      { status: "OPEN", hours: elapsedHours * 0.1 },
-      { status: "IN_PROGRESS", hours: elapsedHours * 0.5 },
-      { status: "RESOLVED", hours: elapsedHours * 0.2 },
-      { status: "REOPENED", hours: elapsedHours * 0.2 }
-    );
-  } else {
-    segments.push({ status: "OPEN", hours: elapsedHours * 0.2 }, { status: "IN_PROGRESS", hours: elapsedHours * 0.8 });
-  }
-
-  return {
-    id: `TCK-${4200 + i}`,
-    subject,
-    requester: pick(REQUESTERS),
-    priority,
-    status,
-    category,
-    createdAt,
-    dueAt,
-    resolvedAt,
-    tatHours: Number(tatHours.toFixed(1)),
-    dueInHrs: Math.round((dueAt - NOW) / 3600000),
-    slaBreached,
-    segments,
-  };
-}
-
-const TICKET_POOL: MockTicket[] = Array.from({ length: 240 }, (_, i) => buildTicket(i)).sort((a, b) => b.createdAt - a.createdAt);
-
-/* ------------------------------------------------------------------ */
 /*  Real data — GET /agent-dashboard/analytics                        */
 /*  Maps the backend's lean payload (raw tickets + status-history      */
-/*  segments) onto the same MockTicket shape the chart/table code      */
-/*  already consumes, so every useMemo below works unmodified whether  */
-/*  it's fed local mock data or the real API response.                 */
+/*  segments) onto the MockTicket shape the chart/table code consumes. */
 /* ------------------------------------------------------------------ */
 const API_BASE = "http://localhost:3000";
 
@@ -316,12 +193,25 @@ interface ApiTicket {
   segments: ApiStatusSegment[];
 }
 
+interface ApiDepartmentSnapshot {
+  departmentName: string | null;
+  managerName: string | null;
+  agentCount: number;
+  openTickets: number;
+  breachedTickets: number;
+  totalTickets: number;
+  compliancePct: number;
+  yourOpenSharePct: number;
+}
+
 interface AgentAnalyticsResponse {
   agent: { id: string; fullName: string };
   department: { id: string; name: string } | null;
+  departmentSnapshot: ApiDepartmentSnapshot | null;
   categories: { id: string; name: string }[];
   tickets: ApiTicket[];
   departmentAvgTatHours: number | null;
+  departmentTargetTatHours: number | null;
 }
 
 function mapApiTicketToMockTicket(t: ApiTicket): MockTicket {
@@ -391,10 +281,10 @@ function relativeTime(ts: number): string {
 interface TrendPoint {
   day: string;
   you: number;
-  target: number;
+  target: number | null;
 }
 
-function buildTrend(tickets: MockTicket[], start: number, end: number): TrendPoint[] {
+function buildTrend(tickets: MockTicket[], start: number, end: number, target: number | null): TrendPoint[] {
   const spanDays = Math.max(1, (end - start) / DAY_MS);
   const bucketCount = Math.min(14, Math.max(4, Math.round(spanDays)));
   const bucketSize = (end - start) / bucketCount;
@@ -404,7 +294,7 @@ function buildTrend(tickets: MockTicket[], start: number, end: number): TrendPoi
     b.sum += t.tatHours;
     b.count += 1;
   });
-  return buckets.map((b) => ({ day: formatDay(b.from), you: b.count ? Number((b.sum / b.count).toFixed(1)) : 0, target: DEPT_TARGET_TAT }));
+  return buckets.map((b) => ({ day: formatDay(b.from), you: b.count ? Number((b.sum / b.count).toFixed(1)) : 0, target }));
 }
 
 const DATE_RANGE_GROUPS: { label: string; options: DateRangeKey[] }[] = [
@@ -645,16 +535,21 @@ export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps 
   const [customBounds, setCustomBounds] = useState<CustomBounds | null>(null);
   const [tab, setTab] = useState<TicketTab>("OPEN");
 
-  // Starts out on the local mock pool so the dashboard renders immediately
-  // (and still works standalone, with no token, e.g. in Storybook/demo
-  // mode). When a token is supplied, GET /agent-dashboard/analytics swaps
-  // this out for the signed-in agent's real tickets — every chart below
-  // is driven off this one array either way.
-  const [ticketPool, setTicketPool] = useState<MockTicket[]>(TICKET_POOL);
+  // No local/demo data: the dashboard starts empty and is driven entirely
+  // by GET /agent-dashboard/analytics. Every chart below reads off this one
+  // array, which only ever holds real tickets for the signed-in agent.
+  const [ticketPool, setTicketPool] = useState<MockTicket[]>([]);
   const [departmentAvgTatHours, setDepartmentAvgTatHours] = useState<number | null>(null);
+  const [targetTatHours, setTargetTatHours] = useState<number | null>(null);
+  const [departmentSnapshot, setDepartmentSnapshot] = useState<ApiDepartmentSnapshot | null>(null);
+  const [agentIdentity, setAgentIdentity] = useState<{ fullName: string; departmentName: string | null; managerName: string | null } | null>(null);
+  const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">("loading");
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setLoadState("error");
+      return;
+    }
     let cancelled = false;
     const requestFn = apiFetch || window.fetch;
 
@@ -663,14 +558,27 @@ export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps 
         const res = await requestFn(`${API_BASE}/agent-dashboard/analytics`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          setLoadState("error");
+          return;
+        }
         const data: AgentAnalyticsResponse = await res.json();
         if (cancelled) return;
         setTicketPool(data.tickets.map(mapApiTicketToMockTicket));
         setDepartmentAvgTatHours(data.departmentAvgTatHours);
+        setTargetTatHours(data.departmentTargetTatHours);
+        setDepartmentSnapshot(data.departmentSnapshot);
+        setAgentIdentity({
+          fullName: data.agent.fullName,
+          departmentName: data.department?.name ?? null,
+          managerName: data.departmentSnapshot?.managerName ?? null,
+        });
+        setLoadState("loaded");
       } catch {
-        // Backend unreachable — keep showing the local mock pool rather
-        // than an empty dashboard.
+        // Backend unreachable — surface an error state rather than
+        // falling back to fabricated/demo numbers.
+        if (!cancelled) setLoadState("error");
       }
     })();
 
@@ -732,7 +640,7 @@ export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps 
     [ticketsInRange]
   );
 
-  const tatTrend = useMemo(() => buildTrend(ticketsInRange, start, end), [ticketsInRange, start, end]);
+  const tatTrend = useMemo(() => buildTrend(ticketsInRange, start, end, targetTatHours), [ticketsInRange, start, end, targetTatHours]);
 
   const filteredTickets = useMemo(() => {
     if (tab === "ALL") return ticketsInRange;
@@ -761,22 +669,13 @@ export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps 
 
   const deptComparison = useMemo(() => {
     const you = Number(kpis.avgTat);
-    const dept = departmentAvgTatHours ?? Number((you * 1.18 + 0.6).toFixed(1));
-    return [
+    const bars = [
       { name: "You", value: you, fill: C.primary[600] },
-      { name: "Dept avg", value: dept, fill: C.neutral[300] },
-      { name: "Target", value: DEPT_TARGET_TAT, fill: C.warning[400] },
+      { name: "Dept avg", value: departmentAvgTatHours ?? 0, fill: C.neutral[300] },
     ];
-  }, [kpis.avgTat, departmentAvgTatHours]);
-
-  const deptSnapshot = useMemo(() => {
-    const deptOpen = Math.round(kpis.open * 4.6 + 3);
-    const deptAvgTat = (Number(kpis.avgTat) * 1.18 + 0.6).toFixed(1);
-    const deptBreached = Math.round(kpis.breached * 3.4 + 1);
-    const deptCompliance = Math.max(60, 100 - deptBreached * 2);
-    const yourShare = deptOpen ? Math.round((kpis.open / deptOpen) * 100) : 0;
-    return { deptOpen, deptAvgTat, deptBreached, deptCompliance, yourShare };
-  }, [kpis]);
+    if (targetTatHours != null) bars.push({ name: "Target", value: targetTatHours, fill: C.warning[400] });
+    return bars;
+  }, [kpis.avgTat, departmentAvgTatHours, targetTatHours]);
 
   interface ActivityItem {
     ticket: string;
@@ -796,14 +695,25 @@ export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps 
     [ticketsInRange]
   );
 
-  const deptSnapshotRows: { label: string; value: string | number; icon: LucideIcon; tone: Scale }[] = [
-    { label: "Open tickets (dept)", value: deptSnapshot.deptOpen, icon: Ticket, tone: C.primary },
-    { label: "Avg TAT (dept)", value: `${deptSnapshot.deptAvgTat}h`, icon: Clock, tone: C.warning },
-    { label: "SLA compliance (dept)", value: `${deptSnapshot.deptCompliance}%`, icon: CheckCircle2, tone: C.success },
-    { label: "Breached (dept)", value: deptSnapshot.deptBreached, icon: AlertTriangle, tone: C.destructive },
-  ];
+  const deptSnapshotRows: { label: string; value: string | number; icon: LucideIcon; tone: Scale }[] = departmentSnapshot
+    ? [
+        { label: "Open tickets (dept)", value: departmentSnapshot.openTickets, icon: Ticket, tone: C.primary },
+        { label: "Avg TAT (dept)", value: departmentAvgTatHours != null ? `${departmentAvgTatHours}h` : "—", icon: Clock, tone: C.warning },
+        { label: "SLA compliance (dept)", value: `${departmentSnapshot.compliancePct}%`, icon: CheckCircle2, tone: C.success },
+        { label: "Breached (dept)", value: departmentSnapshot.breachedTickets, icon: AlertTriangle, tone: C.destructive },
+      ]
+    : [];
 
   const tatDiff = deptComparison[1].value - deptComparison[0].value;
+
+  const agentInitials = agentIdentity?.fullName
+    ? agentIdentity.fullName
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((p) => p[0]?.toUpperCase())
+        .join("")
+    : "—";
 
   return (
     <div className="min-h-screen w-full font-sans" style={{ backgroundColor: C.neutral[50] }}>
@@ -812,12 +722,12 @@ export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps 
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="h-11 w-11 rounded-xl flex items-center justify-center text-sm font-semibold" style={{ backgroundColor: C.primary[600], color: "#fff" }}>
-              RA
+              {agentInitials}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-semibold" style={{ color: C.neutral[900] }}>
-                  Riya Ahluwalia
+                  {agentIdentity?.fullName ?? "—"}
                 </h1>
                 <span className="text-[11px] font-semibold uppercase tracking-wide rounded-md px-2 py-0.5" style={{ backgroundColor: C.primary[50], color: C.primary[700] }}>
                   Agent
@@ -825,23 +735,28 @@ export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps 
               </div>
               <div className="flex items-center gap-1.5 text-xs mt-0.5" style={{ color: C.neutral[500] }}>
                 <Building2 size={12} />
-                · reports to D. Sharma
+                {agentIdentity?.departmentName ? ` ${agentIdentity.departmentName}` : ""}
+                {agentIdentity?.managerName ? ` · reports to ${agentIdentity.managerName}` : ""}
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            
+            {loadState === "error" && (
+              <span className="text-xs font-medium" style={{ color: C.destructive[600] }}>
+                Couldn't load your data — check your connection and retry.
+              </span>
+            )}
             <DateRangePicker activeKey={range} displayLabel={displayLabel} onSelectPreset={setRange} onApplyCustom={handleApplyCustom} />
-            
           </div>
         </div>
+
 
         {/* ---------------- KPI row ---------------- */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <KpiCard icon={Ticket} label="Open tickets" value={kpis.open} tone={{ bg: C.primary[50], fg: C.primary[600] }} sub={`${kpis.total} total in ${displayLabel.toLowerCase()}`} trend={kpis.openTrend} />
           <KpiCard icon={CheckCircle2} label="Resolved" value={kpis.resolved} tone={{ bg: C.success[50], fg: C.success[600] }} sub="Resolved + closed in range" trend={kpis.resolvedTrend} />
-          <KpiCard icon={Timer} label="Avg. resolution time" value={`${kpis.avgTat}h`} tone={{ bg: C.warning[50], fg: C.warning[600] }} sub={`Dept target: ${DEPT_TARGET_TAT}h`} trend={kpis.tatTrendDelta} />
+          <KpiCard icon={Timer} label="Avg. resolution time" value={`${kpis.avgTat}h`} tone={{ bg: C.warning[50], fg: C.warning[600] }} sub={targetTatHours != null ? `Dept target: ${targetTatHours}h` : "Dept target: not enough data yet"} trend={kpis.tatTrendDelta} />
           <KpiCard icon={CircleDot} label="SLA compliance" value={`${kpis.compliance}%`} tone={{ bg: C.primary[50], fg: C.primary[700] }} sub={`${kpis.total} tickets in range`} trend={kpis.complianceTrend} />
           <KpiCard icon={Flame} label="SLA breached" value={kpis.breached} tone={{ bg: C.destructive[50], fg: C.destructive[600] }} sub="Needs immediate action" />
         </div>
@@ -906,7 +821,9 @@ export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps 
                     <XAxis dataKey="day" tick={{ fontSize: 11, fill: C.neutral[400] }} axisLine={{ stroke: C.neutral[200] }} tickLine={false} interval={Math.max(0, Math.floor(tatTrend.length / 7))} />
                     <YAxis tick={{ fontSize: 11, fill: C.neutral[400] }} axisLine={false} tickLine={false} unit="h" />
                     <Tooltip contentStyle={{ borderRadius: 10, border: `1px solid ${C.neutral[200]}`, fontSize: 12 }} />
-                    <ReferenceLine y={DEPT_TARGET_TAT} stroke={C.warning[400]} strokeDasharray="4 4" label={{ value: `Target ${DEPT_TARGET_TAT}h`, position: "insideTopRight", fontSize: 10, fill: C.warning[600] }} />
+                    {targetTatHours != null && (
+                      <ReferenceLine y={targetTatHours} stroke={C.warning[400]} strokeDasharray="4 4" label={{ value: `Target ${targetTatHours}h`, position: "insideTopRight", fontSize: 10, fill: C.warning[600] }} />
+                    )}
                     <Line type="monotone" dataKey="you" stroke={C.primary[600]} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -1049,19 +966,30 @@ export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps 
                 </ResponsiveContainer>
               </div>
               <p className="text-xs mt-1" style={{ color: C.neutral[400] }}>
-                {tatDiff >= 0 ? (
+                {departmentAvgTatHours == null ? (
+                  <>Not enough resolved department tickets yet to compare.</>
+                ) : tatDiff >= 0 ? (
                   <>
-                    You're resolving <span style={{ color: C.success[600], fontWeight: 600 }}>{tatDiff.toFixed(1)}h faster</span> than the Technical Support department average.
+                    You're resolving <span style={{ color: C.success[600], fontWeight: 600 }}>{tatDiff.toFixed(1)}h faster</span> than the {agentIdentity?.departmentName ?? "department"} average.
                   </>
                 ) : (
                   <>
-                    You're <span style={{ color: C.destructive[600], fontWeight: 600 }}>{Math.abs(tatDiff).toFixed(1)}h slower</span> than the Technical Support department average.
+                    You're <span style={{ color: C.destructive[600], fontWeight: 600 }}>{Math.abs(tatDiff).toFixed(1)}h slower</span> than the {agentIdentity?.departmentName ?? "department"} average.
                   </>
                 )}
               </p>
             </SectionCard>
 
-            <SectionCard title="Department snapshot" subtitle={`Technical Support · 6 agents · ${displayLabel}`}>
+            <SectionCard
+              title="Department snapshot"
+              subtitle={`${agentIdentity?.departmentName ?? "No department"}${departmentSnapshot ? ` · ${departmentSnapshot.agentCount} agent${departmentSnapshot.agentCount === 1 ? "" : "s"}` : ""}`}
+            >
+              {!departmentSnapshot ? (
+                <div className="text-xs py-3 text-center" style={{ color: C.neutral[400] }}>
+                  No department assigned yet.
+                </div>
+              ) : (
+              <>
               <div className="flex flex-col gap-3">
                 {deptSnapshotRows.map((r) => (
                   <div key={r.label} className="flex items-center justify-between">
@@ -1078,9 +1006,11 @@ export default function AgentDashboard({ token, apiFetch }: AgentDashboardProps 
               <div className="mt-3 pt-3 border-t flex items-center justify-between text-xs" style={{ borderColor: C.neutral[100] }}>
                 <span style={{ color: C.neutral[400] }}>Your share of dept. open load</span>
                 <span className="font-semibold flex items-center gap-1" style={{ color: C.primary[600] }}>
-                  {deptSnapshot.yourShare}% <ArrowUpRight size={12} />
+                  {departmentSnapshot.yourOpenSharePct}% <ArrowUpRight size={12} />
                 </span>
               </div>
+              </>
+              )}
             </SectionCard>
 
             <SectionCard title="Recent activity" subtitle="Status changes on your tickets">
