@@ -499,7 +499,9 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
             ← Back to Queue
           </button>
           <span className="text-slate-300">|</span>
-          <span className="text-sm font-mono font-semibold text-slate-900 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md">{ticket.ticketNumber}</span>
+          <span className="text-sm font-mono font-semibold text-slate-900 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md">
+            {[ticket.title, ticket.ticketNumber, ticket.category?.name || "General", ticket.clientName].join(" _ ")}
+          </span>
           {ticket.requester?.role === "REQUESTER" && (
             <span className="text-[10px] font-bold uppercase tracking-wide bg-amber-50 text-amber-700 border border-amber-200 px-2 py-1 rounded-md">
               External Ticket
