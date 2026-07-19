@@ -27,7 +27,7 @@ export const commentController = {
         commentText: req.body.commentText,
         isInternal,
       },
-      include: { user: true },
+      include: { user: true, attachment: true },
     });
     res.status(201).json(comment);
   },
@@ -37,7 +37,7 @@ export const commentController = {
     const staff = isStaff(req.user!.role);
     const comments = await prisma.ticketComment.findMany({
       where: { ticketId: req.params.ticketId, ...(staff ? {} : { isInternal: false }) },
-      include: { user: true },
+      include: { user: true, attachment: true },
       orderBy: { createdAt: "asc" },
     });
     res.json(comments);
