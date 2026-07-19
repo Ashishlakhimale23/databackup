@@ -116,6 +116,10 @@ model Client {
   // account) — surfaced to the global admin and usable for prioritization.
   isKeyClient Boolean @default(false)
 
+  // NOTE(added): classifies the client's business as Wind (true) or
+  // Non-Wind (false). Simple boolean toggle set at client creation/edit.
+  isWindClient Boolean @default(false)
+
   createdAt DateTime @default(now())
 
   // NOTE(added): a client can now have multiple projects under it, replacing
@@ -594,6 +598,11 @@ model AdminMessage {
 
   @@index([userId, createdAt])
 }
+
+
+
+
+
 
 
 
