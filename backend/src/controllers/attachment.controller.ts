@@ -1,13 +1,17 @@
+import fs from "fs";
 import { Response } from "express";
 import { AuthedRequest } from "../middleware/auth";
 import { prisma } from "../lib/database";
 import { AppError } from "../middleware/errorHandler";
 import { presignAttachmentSchema } from "../utils/schemas";
+import { isStaff } from "../utils/rbac";
 import {
   buildAttachmentKey,
   createPresignedUploadUrl,
   isAllowedAttachment,
   isOwnedByOurBucket,
+  keyFromLocalFileUrl,
+  resolveLocalAttachmentPath,
   MAX_ATTACHMENT_SIZE_BYTES,
 } from "../lib/s3";
 
@@ -42,12 +46,18 @@ export const attachmentController = {
     res.json({ uploadUrl, fileUrl, key, fileName });
   },
 
-  // POST /tickets/:ticketId/attachments  { fileName, fileUrl }
+  // POST /tickets/:ticketId/attachments  { fileName, fileUrl, commentText? }
   // Called after the browser has already PUT the file using the uploadUrl
   // from `presign`. Rejects fileUrls that don't point at our own local
   // `/uploads` storage so this can't be used to link out to arbitrary URLs.
+  //
+  // Also posts a comment alongside the attachment, so it shows up in the
+  // Comments & Activity thread: if the user typed a comment, that text is
+  // used; otherwise the comment just names the attached file. Either way
+  // the comment is linked to the attachment (via attachmentId) so the UI
+  // can render the file next to the comment text.
   async create(req: AuthedRequest, res: Response) {
-    const { fileName, fileUrl } = req.body;
+    const { fileName, fileUrl, commentText } = req.body;
     if (!fileName || !fileUrl) {
       throw new AppError("fileName and fileUrl are required", 400);
     }
@@ -66,7 +76,46 @@ export const attachmentController = {
         uploadedBy: req.user!.id,
       },
     });
-    res.status(201).json(attachment);
+
+    const trimmedComment = typeof commentText === "string" ? commentText.trim() : "";
+    const comment = await prisma.ticketComment.create({
+      data: {
+        ticketId: req.params.ticketId,
+        userId: req.user!.id,
+        commentText: trimmedComment || `Attached: ${fileName}`,
+        attachmentId: attachment.id,
+      },
+      include: { user: true, attachment: true },
+    });
+
+    res.status(201).json({ ...attachment, comment });
+  },
+
+  // DELETE /tickets/:ticketId/attachments/:attachmentId
+  // Removes an attachment's DB record and its file on local disk. Only the
+  // person who uploaded it, or staff, may remove it. The linked comment (if
+  // any) is kept - its attachmentId just gets cleared (see schema.prisma) -
+  // so the activity thread doesn't lose the note that a file was shared.
+  async remove(req: AuthedRequest, res: Response) {
+    const attachment = await prisma.ticketAttachment.findUniqueOrThrow({
+      where: { id: req.params.attachmentId },
+    });
+    if (attachment.ticketId !== req.params.ticketId) {
+      throw new AppError("Attachment does not belong to this ticket", 400);
+    }
+    if (attachment.uploadedBy !== req.user!.id && !isStaff(req.user!.role)) {
+      throw new AppError("You do not have permission to remove this attachment", 403);
+    }
+
+    await prisma.ticketAttachment.delete({ where: { id: attachment.id } });
+
+    const key = keyFromLocalFileUrl(attachment.fileUrl);
+    if (key) {
+      // Best-effort - the DB record is already gone either way.
+      fs.unlink(resolveLocalAttachmentPath(key), () => {});
+    }
+
+    res.status(204).send();
   },
 
   // GET /tickets/:ticketId/attachments
@@ -79,4 +128,3 @@ export const attachmentController = {
     res.json(attachments);
   },
 };
-
