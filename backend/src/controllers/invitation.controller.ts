@@ -25,6 +25,7 @@ export const invitationController = {
         role: req.body.role,
         name: req.body.name,
         state : req.body.state,
+        windCategory: req.body.role === "AGENT" ? (req.body.windCategory || null) : null,
         departmentId: req.body.departmentId,
         departmentIds : req.body.departmentIds,
         categoryIds: req.body.categoryIds,
