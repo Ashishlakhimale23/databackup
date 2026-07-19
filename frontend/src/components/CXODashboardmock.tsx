@@ -1,309 +1,277 @@
-import React, { useEffect, useMemo, useRef, useState } from "react"; 
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import {
-  AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend, ReferenceLine,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
 } from "recharts";
 import {
-  Ticket, FolderOpen, AlertTriangle, PauseCircle, CheckCircle2,
-  Building2, ChevronDown, ChevronLeft, ArrowUpRight, ArrowDownRight, Users, Flame,
-  ShieldAlert, TrendingUp, CalendarDays, Download,
+  Ticket as TicketIcon,
+  CircleDot,
+  CheckCircle2,
+  PauseCircle,
+  AlertTriangle,
+  Clock,
+  Percent,
+  Building2,
+  MapPin,
+  Briefcase,
+  Calendar,
+  ChevronDown as ChevronDownIcon,
+  Check,
+  ChevronLeft,
+  Gauge,
+  X,
 } from "lucide-react";
 
-// ---------------------------------------------------------------------------
-// Design tokens (brand palette supplied by client)
-// ---------------------------------------------------------------------------
-const C = {
-  purple: "#1E22FB",     // primary-600 — main brand accent
-  blue: "#4B4EFC",       // primary-500 — secondary accent
-  teal: "#9CA3AF",       // neutral-400 — muted, used for lowest-priority / neutral series
-  cyan: "#7375FD",       // primary-400 — lighter accent (secondary status tone)
-  darkTeal: "#16A34A",   // success-600 — resolved / good states
-  mist: "#E1E1FE",       // primary-100 — closest we have to primary-50, used for selected bg
-  ink: "#111827",        // neutral-900
-  slate: "#4B5563",      // neutral-600
-  hairline: "#E5E7EB",   // neutral-200
-  divider: "#F3F4F6",    // neutral-100
-  canvas: "#F9FAFB",     // neutral-50
-  danger: "#DC2626",     // destructive-600
-  dangerTint: "#FEE2E2", // destructive-100
-  amber: "#D97706",      // warning-600
-  amberTint: "#FEF3C7",  // warning-100
-  successTint: "#DCFCE7",// success-100
-  muted: "#9CA3AF",      // neutral-400, empty-state text
-};
+// ============================================================================
+// Domain types — mirrors the Prisma schema (subset relevant to this view)
+// ============================================================================
 
-const DEPT_CHART_COLORS = [C.purple, C.darkTeal, C.amber, C.slate, C.blue];
+type TicketStatus = "OPEN" | "IN_PROGRESS" | "ON_HOLD" | "RESOLVED";
+type TicketPriority = "P1" | "P2" | "P3" | "P4";
 
-const STATUS_COLOR: Record<string, string> = {
-  Open: C.blue,
-  "In Progress": C.cyan,
-  "On Hold": C.amber,
-  Resolved: C.darkTeal,
-};
-
-const PRIORITY_COLOR: Record<string, string> = {
-  P1: C.danger,
-  P2: C.amber,
-  P3: C.purple,
-  P4: C.teal,
-};
-
-// ---------------------------------------------------------------------------
-// Mock data — shaped like the Prisma schema (Ticket.status / priority / slaBreached,
-// Department, CategoryAgent headcount, TicketStatusHistory-derived TAT).
-// ---------------------------------------------------------------------------
-type DeptKey = "it" | "hr" | "finance" | "facilities" | "security";
-
-interface DeptSnapshot {
-  key: DeptKey;
+interface Department {
+  id: string;
   name: string;
-  manager: string;
-  agents: number;
-  open: number;
-  inProgress: number;
-  onHold: number;
-  resolved: number;
-  slaBreached: number;
-  avgTatHrs: number;
-  tatDeltaPct: number; // negative = improved (faster)
-  priority: { P1: number; P2: number; P3: number; P4: number };
 }
 
-const DEPARTMENTS: DeptSnapshot[] = [
-  { key: "it", name: "IT Support", manager: "Ramesh Iyer", agents: 12,
-    open: 86, inProgress: 54, onHold: 21, resolved: 267, slaBreached: 34,
-    avgTatHrs: 18.4, tatDeltaPct: -6.2, priority: { P1: 22, P2: 61, P3: 210, P4: 135 } },
-  { key: "finance", name: "Finance & Payroll", manager: "Alka Desai", agents: 6,
-    open: 41, inProgress: 18, onHold: 15, resolved: 129, slaBreached: 28,
-    avgTatHrs: 27.6, tatDeltaPct: 11.8, priority: { P1: 18, P2: 39, P3: 96, P4: 50 } },
-  { key: "security", name: "Security & Compliance", manager: "Vikram Suri", agents: 3,
-    open: 27, inProgress: 9, onHold: 5, resolved: 56, slaBreached: 15,
-    avgTatHrs: 22.3, tatDeltaPct: 4.1, priority: { P1: 20, P2: 24, P3: 32, P4: 21 } },
-  { key: "hr", name: "HR Operations", manager: "Neha Kapoor", agents: 5,
-    open: 22, inProgress: 14, onHold: 9, resolved: 111, slaBreached: 6,
-    avgTatHrs: 9.2, tatDeltaPct: -14.5, priority: { P1: 3, P2: 15, P3: 78, P4: 60 } },
-  { key: "facilities", name: "Facilities", manager: "Sanjay Rao", agents: 4,
-    open: 19, inProgress: 11, onHold: 6, resolved: 98, slaBreached: 4,
-    avgTatHrs: 11.1, tatDeltaPct: -3.0, priority: { P1: 2, P2: 12, P3: 70, P4: 50 } },
-];
+interface Category {
+  id: string;
+  name: string;
+  departmentId: string;
+}
 
-const DEPT_LABEL: Record<DeptKey, string> = Object.fromEntries(
-  DEPARTMENTS.map((d) => [d.key, d.name])
-) as Record<DeptKey, string>;
+interface Ticket {
+  id: string;
+  ticketNumber: string;
+  departmentId: string;
+  categoryId: string;
+  status: TicketStatus;
+  priority: TicketPriority;
+  createdAt: Date;
+  resolvedAt: Date | null;
+  slaDeadline: Date;
+  slaBreached: boolean;
+  turnoverHours: number;
+  // Captured only at ticket-raise time — never a full master list.
+  state: string;
+  clientName: string;
+}
 
-const fmt = (n: number) => n.toLocaleString("en-IN");
+// ============================================================================
+// Deterministic mock data — swap this block for real API/Prisma queries.
+// Manager oversees several departments; no agent- or manager-level
+// performance is computed anywhere in this file, only department rollups.
+// ============================================================================
 
-// small deterministic PRNG so the mock trend series is stable across renders
 function mulberry32(seed: number) {
   return function () {
-    seed |= 0; seed = (seed + 0x6d2b79f5) | 0;
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
     let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-const rng = mulberry32(20260712);
+const rng = mulberry32(20260719);
+const pick = <T,>(arr: T[]): T => arr[Math.floor(rng() * arr.length)];
+const NOW = new Date();
 
-// "current moment" the whole mock dataset is anchored to
-const NOW = new Date(2026, 6, 12, 15, 30, 0); // Jul 12, 2026, 3:30pm
-const BASELINE_DAYS = 182; // ~6 months — the reference window the mock totals below were tuned for
-
-// ---------------------------------------------------------------------------
-// Date-range math
-// ---------------------------------------------------------------------------
-const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
-const endOfDay = (d: Date) => { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; };
-const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
-const startOfWeek = (d: Date) => { const x = startOfDay(d); const day = x.getDay(); const diff = day === 0 ? 6 : day - 1; return addDays(x, -diff); }; // Monday start
-const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
-const startOfQuarter = (d: Date) => { const q = Math.floor(d.getMonth() / 3); return new Date(d.getFullYear(), q * 3, 1); };
-const startOfYear = (d: Date) => new Date(d.getFullYear(), 0, 1);
-
-type PresetKey =
-  | "today" | "yesterday" | "last24h"
-  | "thisWeek" | "lastWeek" | "last7d"
-  | "thisMonth" | "lastMonth" | "last30d"
-  | "thisQuarter" | "lastQuarter" | "thisYear" | "last90d"
-  | "allTime" | "custom";
-
-const PRESET_GROUPS: { label: string; options: { key: PresetKey; label: string }[] }[] = [
-  { label: "Recent", options: [
-    { key: "today", label: "Today" },
-    { key: "yesterday", label: "Yesterday" },
-    { key: "last24h", label: "Last 24 hours" },
-  ] },
-  { label: "Weekly", options: [
-    { key: "thisWeek", label: "This Week" },
-    { key: "lastWeek", label: "Last Week" },
-    { key: "last7d", label: "Last 7 Days" },
-  ] },
-  { label: "Monthly", options: [
-    { key: "thisMonth", label: "This Month" },
-    { key: "lastMonth", label: "Last Month" },
-    { key: "last30d", label: "Last 30 Days" },
-  ] },
-  { label: "Longer range", options: [
-    { key: "thisQuarter", label: "This Quarter" },
-    { key: "lastQuarter", label: "Last Quarter" },
-    { key: "thisYear", label: "This Year" },
-    { key: "last90d", label: "Last 90 Days" },
-  ] },
-  { label: "Other", options: [
-    { key: "allTime", label: "All Time" },
-    { key: "custom", label: "Custom Range…" },
-  ] },
+// The Manager's departments
+const ALL_DEPARTMENTS: Department[] = [
+  { id: "d1", name: "IT Support" },
+  { id: "d2", name: "Facilities & Admin" },
+  { id: "d3", name: "HR Operations" },
+  { id: "d4", name: "Finance & Accounts" },
 ];
-const PRESET_LABEL: Record<PresetKey, string> = Object.fromEntries(
-  PRESET_GROUPS.flatMap((g) => g.options).map((o) => [o.key, o.label])
-) as Record<PresetKey, string>;
 
-interface DateRange { start: Date; end: Date; }
-
-function resolvePresetRange(key: PresetKey, custom: { from: Date; to: Date } | null): DateRange {
-  switch (key) {
-    case "today": return { start: startOfDay(NOW), end: NOW };
-    case "yesterday": { const y = addDays(NOW, -1); return { start: startOfDay(y), end: endOfDay(y) }; }
-    case "last24h": return { start: new Date(NOW.getTime() - 24 * 3_600_000), end: NOW };
-    case "thisWeek": return { start: startOfWeek(NOW), end: NOW };
-    case "lastWeek": { const s = startOfWeek(NOW); const prevEnd = addDays(s, -1); return { start: startOfWeek(prevEnd), end: endOfDay(prevEnd) }; }
-    case "last7d": return { start: addDays(NOW, -7), end: NOW };
-    case "thisMonth": return { start: startOfMonth(NOW), end: NOW };
-    case "lastMonth": { const s = startOfMonth(NOW); const prevEnd = addDays(s, -1); return { start: startOfMonth(prevEnd), end: endOfDay(prevEnd) }; }
-    case "last30d": return { start: addDays(NOW, -30), end: NOW };
-    case "thisQuarter": return { start: startOfQuarter(NOW), end: NOW };
-    case "lastQuarter": { const s = startOfQuarter(NOW); const prevEnd = addDays(s, -1); return { start: startOfQuarter(prevEnd), end: endOfDay(prevEnd) }; }
-    case "thisYear": return { start: startOfYear(NOW), end: NOW };
-    case "last90d": return { start: addDays(NOW, -90), end: NOW };
-    case "allTime": return { start: addDays(NOW, -365), end: NOW }; // full span of the mock dataset
-    case "custom": return custom ? { start: startOfDay(custom.from), end: endOfDay(custom.to) } : { start: startOfWeek(NOW), end: NOW };
-  }
-}
-
-function getPreviousRange(range: DateRange): DateRange {
-  const durationMs = range.end.getTime() - range.start.getTime();
-  return { start: new Date(range.start.getTime() - durationMs), end: new Date(range.start.getTime() - 1) };
-}
-
-function toDateInputValue(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function formatShort(d: Date) {
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-// ---------------------------------------------------------------------------
-// Trend datasets — every point carries a real Date so arbitrary custom
-// ranges (not just fixed presets) can filter them correctly.
-// ---------------------------------------------------------------------------
-const DAILY_DAYS_BACK = 120;
-const DAILY_DATES = Array.from({ length: DAILY_DAYS_BACK }, (_, i) => addDays(startOfDay(NOW), -(DAILY_DAYS_BACK - 1 - i)));
-
-const VOLUME_TREND_DAILY = DAILY_DATES.map((date, i) => {
-  const trend = 6 + (i / (DAILY_DAYS_BACK - 1)) * 3.2;
-  const weekendDip = i % 7 >= 5 ? 0.55 : 1;
-  const created = Math.max(1, Math.round(trend * weekendDip + (rng() - 0.5) * 3));
-  const resolved = Math.max(1, Math.round(trend * 0.95 * weekendDip + (rng() - 0.5) * 3));
-  return { date, month: formatShort(date), created, resolved };
-});
-
-// org-wide monthly created vs resolved (12 calendar months, ending this month)
-const MONTHLY_CREATED = [148, 156, 163, 159, 141, 168, 172, 189, 205, 198, 224, 236];
-const MONTHLY_RESOLVED = [141, 149, 155, 162, 148, 160, 158, 176, 190, 201, 209, 214];
-const MONTH_DATES = Array.from({ length: 12 }, (_, i) => new Date(NOW.getFullYear(), NOW.getMonth() - (11 - i), 1));
-const VOLUME_TREND_FULL = MONTH_DATES.map((date, i) => ({
-  date, month: date.toLocaleDateString("en-US", { month: "short" }), created: MONTHLY_CREATED[i], resolved: MONTHLY_RESOLVED[i],
-}));
-
-// per-department SLA compliance % trend (12 months)
-const SLA_TREND: Record<DeptKey, number[]> = {
-  it: [90, 89, 88, 87, 86, 87, 88, 87, 85, 86, 89, 91],
-  finance: [82, 81, 80, 78, 77, 78, 79, 76, 74, 72, 75, 78],
-  security: [85, 86, 84, 83, 82, 83, 83, 81, 80, 84, 85, 84],
-  hr: [93, 94, 95, 95, 96, 96, 95, 96, 94, 97, 97, 98],
-  facilities: [94, 95, 96, 95, 96, 97, 96, 95, 97, 98, 97, 98],
+const DEPT_CATEGORIES: Record<string, string[]> = {
+  d1: ["Network & VPN", "Hardware", "Software Install", "Access & Permissions"],
+  d2: ["Maintenance Request", "Housekeeping", "Security & Access", "Asset Request"],
+  d3: ["Payroll Query", "Leave & Attendance", "Onboarding", "Policy Clarification"],
+  d4: ["Reimbursement", "Vendor Payment", "Invoice Query", "Budget Approval"],
 };
-const SLA_TREND_DATA_FULL = MONTH_DATES.map((date, i) => {
-  const row: Record<string, number | string | Date> = { date, month: date.toLocaleDateString("en-US", { month: "short" }) };
-  DEPARTMENTS.forEach((d) => (row[d.key] = SLA_TREND[d.key][i]));
-  return row as { date: Date; month: string } & Record<DeptKey, number>;
-});
 
-// per-department daily SLA% — random walk anchored to that department's latest monthly figure
-const SLA_TREND_DAILY_BY_DEPT: Record<DeptKey, number[]> = Object.fromEntries(
-  DEPARTMENTS.map((d) => {
-    let v = SLA_TREND[d.key][SLA_TREND[d.key].length - 1];
-    const series = DAILY_DATES.map(() => {
-      v = Math.min(100, Math.max(55, v + (rng() - 0.5) * 4));
-      return Math.round(v);
-    });
-    return [d.key, series];
-  })
-) as Record<DeptKey, number[]>;
-const SLA_TREND_DATA_DAILY = DAILY_DATES.map((date, i) => {
-  const row: Record<string, number | string | Date> = { date, month: formatShort(date) };
-  DEPARTMENTS.forEach((d) => (row[d.key] = SLA_TREND_DAILY_BY_DEPT[d.key][i]));
-  return row as { date: Date; month: string } & Record<DeptKey, number>;
-});
+const ALL_CATEGORIES: Category[] = Object.entries(DEPT_CATEGORIES).flatMap(([deptId, cats], di) =>
+  cats.map((name, ci) => ({ id: `c${di * 4 + ci + 1}`, name, departmentId: deptId }))
+);
 
-function filterByRange<T extends { date: Date }>(arr: T[], range: DateRange, wholeMonth: boolean): T[] {
-  const floor = wholeMonth ? startOfMonth(range.start).getTime() : startOfDay(range.start).getTime();
-  return arr.filter((p) => p.date.getTime() >= floor && p.date.getTime() <= range.end.getTime());
-}
-
-interface AtRiskTicket {
-  id: string;
-  dept: DeptKey;
-  title: string;
-  priority: "P1" | "P2" | "P3" | "P4";
-  ageHrs: number;
-  assignee: string;
-  status: "Breached" | "At risk";
-}
-
-const AT_RISK: AtRiskTicket[] = [
-  { id: "TKT-10432", dept: "finance", title: "Vendor payment batch stuck in approval", priority: "P1", ageHrs: 41, assignee: "A. Desai", status: "Breached" },
-  { id: "TKT-10471", dept: "it", title: "VPN gateway intermittent drops – Pune office", priority: "P1", ageHrs: 26, assignee: "R. Iyer", status: "Breached" },
-  { id: "TKT-10501", dept: "security", title: "Access review overdue for contractor accounts", priority: "P1", ageHrs: 19, assignee: "V. Suri", status: "At risk" },
-  { id: "TKT-10488", dept: "finance", title: "Payroll variance – Q2 reconciliation", priority: "P2", ageHrs: 34, assignee: "S. Nair", status: "Breached" },
-  { id: "TKT-10512", dept: "it", title: "ERP login failures after SSO rollout", priority: "P1", ageHrs: 14, assignee: "P. Mehta", status: "At risk" },
-  { id: "TKT-10460", dept: "security", title: "Firewall rule exception pending sign-off", priority: "P2", ageHrs: 22, assignee: "V. Suri", status: "At risk" },
+// Pools used only to *generate* mock tickets — the UI never reads these
+// directly for filter options. Filter option lists are always derived from
+// the tickets actually raised, matching how the real endpoint would do a
+// `DISTINCT` over tickets in scope rather than joining a full master table.
+const STATE_POOL = [
+  "Maharashtra", "Karnataka", "Delhi", "Tamil Nadu", "Telangana",
+  "Gujarat", "West Bengal", "Uttar Pradesh", "Haryana", "Rajasthan",
+];
+const CLIENT_POOL = [
+  "Nimbus Logistics", "Everest Foods Ltd", "Solstice Retail", "Vantage Manufacturing",
+  "BluePeak Textiles", "Coral Bay Hospitality", "Meridian Pharma", "Zenith Motors",
+  "Harbor Freight Co", "Crestline Realty", "Oakwood Analytics", "Silverline Insurance",
 ];
 
-// ---------------------------------------------------------------------------
-// Small building blocks
-// ---------------------------------------------------------------------------
-function KpiCard({
-  icon: Icon, label, value, sub, accent, delta,
+const STATUS_WEIGHTS: [TicketStatus, number][] = [
+  ["OPEN", 0.26],
+  ["IN_PROGRESS", 0.24],
+  ["ON_HOLD", 0.11],
+  ["RESOLVED", 0.39],
+];
+function weightedStatus(): TicketStatus {
+  const r = rng();
+  let acc = 0;
+  for (const [s, w] of STATUS_WEIGHTS) {
+    acc += w;
+    if (r <= acc) return s;
+  }
+  return "RESOLVED";
+}
+
+const ALL_TICKETS: Ticket[] = Array.from({ length: 620 }, (_, i) => {
+  const dept = pick(ALL_DEPARTMENTS);
+  const deptCats = ALL_CATEGORIES.filter((c) => c.departmentId === dept.id);
+  const daysAgo = Math.floor(rng() * 90);
+  const createdAt = new Date(NOW.getTime() - daysAgo * 86400000 - Math.floor(rng() * 86400000));
+  const status = weightedStatus();
+  const priority = pick<TicketPriority>(["P1", "P2", "P3", "P4", "P2", "P3"]);
+  const slaHours = priority === "P1" ? 4 : priority === "P2" ? 24 : priority === "P3" ? 72 : 120;
+  const slaDeadline = new Date(createdAt.getTime() + slaHours * 3600000);
+  const isResolved = status === "RESOLVED";
+  const resolutionHours = Math.max(0.5, rng() * slaHours * 1.6);
+  const resolvedAt = isResolved ? new Date(createdAt.getTime() + resolutionHours * 3600000) : null;
+  const referenceNow = isResolved ? (resolvedAt as Date) : NOW;
+  const slaBreached = referenceNow.getTime() > slaDeadline.getTime();
+
+  return {
+    id: `t${i}`,
+    ticketNumber: `TCK-${(2000 + i).toString()}`,
+    departmentId: dept.id,
+    categoryId: pick(deptCats).id,
+    status,
+    priority,
+    createdAt,
+    resolvedAt,
+    slaDeadline,
+    slaBreached,
+    turnoverHours: isResolved ? resolutionHours : 0,
+    state: pick(STATE_POOL),
+    clientName: pick(CLIENT_POOL),
+  };
+});
+
+// ============================================================================
+// Formatting helpers
+// ============================================================================
+
+const fmtHours = (h: number) => (h < 1 ? `${Math.round(h * 60)}m` : h < 24 ? `${h.toFixed(1)}h` : `${(h / 24).toFixed(1)}d`);
+const fmtPct = (n: number) => `${(n * 100).toFixed(1)}%`;
+
+// ============================================================================
+// Design system — identical palette/tokens to the HOD analytics console
+// Primary:     #4B4EFC (500) · #1E22FB (600) · #0408E7 (700)
+// Neutral:     #F9FAF8 (50)  · #E5E7EB (200) · #9CA3AF (400) · #6B7280 (500) · #111827 (900)
+// Success:     #23C55E (500) · #16A34A (600)
+// Warning:     #F59E0B (500) · #D97706 (600)
+// Destructive: #EF4444 (500) · #DC2020 (600)
+// ============================================================================
+
+const C = {
+  primary50: "#F5F5FF",
+  primary100: "#E1E1FE",
+  primary200: "#C7C8FD",
+  primary500: "#4B4EFC",
+  primary600: "#1E22FB",
+  primary700: "#0408E7",
+  primary800: "#0306BA",
+  primary900: "#02058D",
+
+  neutral0: "#FFFFFF",
+  neutral50: "#F9FAF8",
+  neutral100: "#F3F4F6",
+  neutral200: "#E5E7EB",
+  neutral300: "#D1D5DB",
+  neutral400: "#9CA3AF",
+  neutral500: "#6B7280",
+  neutral600: "#4B5563",
+  neutral700: "#374151",
+  neutral800: "#1F2937",
+  neutral900: "#111827",
+
+  success50: "#F0FDF4",
+  success200: "#BBF7D0",
+  success500: "#23C55E",
+  success600: "#16A34A",
+  success700: "#15803D",
+
+  warning50: "#FFFBEB",
+  warning200: "#FDE68A",
+  warning500: "#F59E0B",
+  warning600: "#D97706",
+
+  destructive50: "#FEF2F2",
+  destructive200: "#FECACA",
+  destructive500: "#EF4444",
+  destructive600: "#DC2020",
+  destructive700: "#B91C1C",
+};
+
+const ACCENT_PRIMARY = C.primary500;
+const ACCENT_SECONDARY = C.primary700;
+const ACCENT_CHART_A = C.primary600;
+const ACCENT_CHART_B = C.success500;
+const ACCENT_CHART_C = C.warning500;
+
+const GRID_STROKE = C.neutral200;
+const AXIS_TICK = C.neutral400;
+const TOOLTIP_STYLE = {
+  fontSize: 12,
+  borderRadius: 8,
+  border: `1px solid ${C.neutral200}`,
+  boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+};
+
+const STATUS_COLOR: Record<TicketStatus, string> = {
+  OPEN: C.primary500,
+  IN_PROGRESS: C.primary700,
+  ON_HOLD: C.warning500,
+  RESOLVED: C.success500,
+};
+
+const STATUS_LABEL: Record<TicketStatus, string> = {
+  OPEN: "Open",
+  IN_PROGRESS: "In progress",
+  ON_HOLD: "On hold",
+  RESOLVED: "Resolved",
+};
+
+// ============================================================================
+// Small presentational primitives (mirrors HODDashboardmock.tsx)
+// ============================================================================
+
+function SectionCard({
+  title,
+  subtitle,
+  right,
+  children,
 }: {
-  icon: any; label: string; value: string; sub: string; accent: string; delta?: { value: string; good: boolean };
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="flex-1 min-w-[176px] rounded-xl bg-white border border-[#E5E7EB] p-4 shadow-[0_1px_2px_rgba(20,20,43,0.04)]">
-      <div className="flex items-center justify-between mb-3">
-        <div className="h-9 w-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${accent}17` }}>
-          <Icon size={18} style={{ color: accent }} strokeWidth={2.25} />
-        </div>
-        {delta && (
-          <span className="flex items-center gap-0.5 text-[11px] font-semibold" style={{ color: delta.good ? C.darkTeal : C.danger }}>
-            {delta.good ? <ArrowDownRight size={12} /> : <ArrowUpRight size={12} />}
-            {delta.value}
-          </span>
-        )}
-      </div>
-      <div className="text-2xl font-bold tracking-tight" style={{ color: C.ink }}>{value}</div>
-      <div className="text-[13px] font-medium mt-0.5" style={{ color: C.slate }}>{label}</div>
-      <div className="text-[11px] mt-1.5" style={{ color: "#9AA1B4" }}>{sub}</div>
-    </div>
-  );
-}
-
-function SectionCard({ title, subtitle, right, children }: { title: string; subtitle?: string; right?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl bg-white border border-[#E5E7EB] p-5 shadow-[0_1px_2px_rgba(20,20,43,0.04)]">
-      <div className="flex items-start justify-between mb-4">
+    <div className="bg-white rounded-xl shadow-sm p-5 flex flex-col gap-4" style={{ border: `1px solid ${C.neutral200}` }}>
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-[14px] font-semibold" style={{ color: C.ink }}>{title}</h3>
-          {subtitle && <p className="text-[12px] mt-0.5" style={{ color: C.slate }}>{subtitle}</p>}
+          <h3 className="text-sm font-semibold tracking-tight" style={{ color: C.neutral800 }}>{title}</h3>
+          {subtitle && <p className="text-xs mt-0.5" style={{ color: C.neutral500 }}>{subtitle}</p>}
         </div>
         {right}
       </div>
@@ -312,659 +280,708 @@ function SectionCard({ title, subtitle, right, children }: { title: string; subt
   );
 }
 
-function Chip({ label, active, onClick, dotColor }: { label: string; active: boolean; onClick: () => void; dotColor?: string }) {
+function KpiCard({
+  icon,
+  label,
+  value,
+  tone = "neutral",
+  footnote,
+  pulse,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tone?: "neutral" | "critical" | "warning" | "good" | "info";
+  footnote?: string;
+  pulse?: boolean;
+}) {
+  const toneStyle: Record<string, { bg: string; text: string }> = {
+    neutral: { bg: C.neutral100, text: C.neutral700 },
+    critical: { bg: C.destructive50, text: C.destructive700 },
+    warning: { bg: C.warning50, text: C.warning600 },
+    good: { bg: C.success50, text: C.success700 },
+    info: { bg: C.primary50, text: C.primary600 },
+  };
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-4 flex flex-col gap-3 min-w-0" style={{ border: `1px solid ${C.neutral200}` }}>
+      <div className="flex items-center justify-between">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: toneStyle[tone].bg, color: toneStyle[tone].text }}>
+          {icon}
+        </div>
+        {pulse && (
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: C.destructive500 }}></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ backgroundColor: C.destructive600 }}></span>
+          </span>
+        )}
+      </div>
+      <div>
+        <p className="text-2xl font-mono font-semibold tabular-nums tracking-tight" style={{ color: C.neutral900 }}>{value}</p>
+        <p className="text-xs mt-1" style={{ color: C.neutral500 }}>{label}</p>
+        {footnote && <p className="text-[11px] mt-0.5" style={{ color: C.neutral400 }}>{footnote}</p>}
+      </div>
+    </div>
+  );
+}
+
+function Chip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12.5px] font-medium border transition-colors whitespace-nowrap ${
-        active ? "text-white border-transparent" : "bg-white border-[#E5E7EB] hover:border-[#D1D5DB]"
-      }`}
-      style={{ backgroundColor: active ? C.purple : undefined, color: active ? "white" : C.slate }}
+      className="px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap"
+      style={{
+        background: active ? C.primary600 : C.neutral100,
+        color: active ? "#fff" : C.neutral600,
+        border: `1px solid ${active ? C.primary600 : C.neutral200}`,
+      }}
     >
-      {dotColor && <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: active ? "white" : dotColor }} />}
       {label}
     </button>
   );
 }
 
-function Legend2({ items }: { items: { label: string; color: string }[] }) {
-  return (
-    <div className="flex items-center gap-4 flex-wrap">
-      {items.map((it) => (
-        <div key={it.label} className="flex items-center gap-1.5 text-[11.5px]" style={{ color: C.slate }}>
-          <span className="h-2 w-2 rounded-full" style={{ backgroundColor: it.color }} />
-          {it.label}
-        </div>
-      ))}
-    </div>
-  );
+// ============================================================================
+// Date range picker (identical behaviour to HODDashboardmock.tsx)
+// ============================================================================
+
+type PresetKey =
+  | "today" | "yesterday" | "last24" | "thisweek" | "lastweek" | "last7"
+  | "thismonth" | "lastmonth" | "last30" | "thisquarter" | "lastquarter"
+  | "thisyear" | "last90" | "alltime" | "custom";
+
+interface ResolvedRange { rangeStart: Date; rangeEnd: Date; prevRangeStart: Date; rangeLabel: string; }
+
+function startOfDay(d: Date) { const r = new Date(d); r.setHours(0, 0, 0, 0); return r; }
+function endOfDay(d: Date) { const r = new Date(d); r.setHours(23, 59, 59, 999); return r; }
+function startOfWeek(d: Date) { const r = startOfDay(d); r.setDate(r.getDate() - r.getDay()); return r; }
+function endOfWeek(d: Date) { const r = endOfDay(d); r.setDate(r.getDate() + (6 - r.getDay())); return r; }
+function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999); }
+function startOfQuarter(d: Date) { const q = Math.floor(d.getMonth() / 3); return new Date(d.getFullYear(), q * 3, 1); }
+function endOfQuarter(d: Date) { const q = Math.floor(d.getMonth() / 3); return new Date(d.getFullYear(), q * 3 + 3, 0, 23, 59, 59, 999); }
+function addDays(d: Date, n: number) { return new Date(d.getTime() + n * 86400000); }
+function fmtDateShort(d: Date) { return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }); }
+
+function resolvePreset(key: PresetKey, customFrom?: Date, customTo?: Date): ResolvedRange {
+  const now = new Date();
+  const today = startOfDay(now);
+  const ms1d = 86400000;
+  let s: Date, e: Date, ps: Date;
+  switch (key) {
+    case "today": s = today; e = endOfDay(now); ps = addDays(today, -1); break;
+    case "yesterday": s = addDays(today, -1); e = endOfDay(addDays(today, -1)); ps = addDays(today, -2); break;
+    case "last24": s = new Date(now.getTime() - ms1d); e = now; ps = new Date(now.getTime() - ms1d * 2); break;
+    case "thisweek": s = startOfWeek(today); e = endOfWeek(today); ps = addDays(startOfWeek(today), -7); break;
+    case "lastweek": { const lws = addDays(startOfWeek(today), -7); s = lws; e = addDays(lws, 6); ps = addDays(lws, -7); break; }
+    case "last7": s = addDays(today, -6); e = endOfDay(now); ps = addDays(today, -13); break;
+    case "thismonth": s = startOfMonth(today); e = endOfMonth(today); ps = startOfMonth(addDays(startOfMonth(today), -1)); break;
+    case "lastmonth": { const lm = addDays(startOfMonth(today), -1); s = startOfMonth(lm); e = endOfMonth(lm); ps = startOfMonth(addDays(s, -1)); break; }
+    case "last30": s = addDays(today, -29); e = endOfDay(now); ps = addDays(today, -59); break;
+    case "thisquarter": s = startOfQuarter(today); e = endOfQuarter(today); ps = addDays(startOfQuarter(today), -1); break;
+    case "lastquarter": { const lqs = addDays(startOfQuarter(today), -1); s = startOfQuarter(lqs); e = endOfQuarter(lqs); ps = addDays(s, -1); break; }
+    case "thisyear": s = new Date(today.getFullYear(), 0, 1); e = new Date(today.getFullYear(), 11, 31, 23, 59, 59, 999); ps = new Date(today.getFullYear() - 1, 0, 1); break;
+    case "last90": s = addDays(today, -89); e = endOfDay(now); ps = addDays(today, -179); break;
+    case "alltime": s = new Date(2020, 0, 1); e = now; ps = new Date(2019, 0, 1); break;
+    case "custom":
+      s = customFrom ? startOfDay(customFrom) : addDays(today, -6);
+      e = customTo ? endOfDay(customTo) : endOfDay(now);
+      ps = new Date(s.getTime() - (e.getTime() - s.getTime()));
+      break;
+    default: s = addDays(today, -6); e = endOfDay(now); ps = addDays(today, -13);
+  }
+  const labels: Record<PresetKey, string> = {
+    today: "Today", yesterday: "Yesterday", last24: "Last 24 hours",
+    thisweek: "This week", lastweek: "Last week", last7: "Last 7 days",
+    thismonth: "This month", lastmonth: "Last month", last30: "Last 30 days",
+    thisquarter: "This quarter", lastquarter: "Last quarter", thisyear: "This year", last90: "Last 90 days",
+    alltime: "All time",
+    custom: customFrom && customTo ? `${fmtDateShort(customFrom)} – ${fmtDateShort(customTo)}` : "Custom range",
+  };
+  return { rangeStart: s, rangeEnd: e, prevRangeStart: ps, rangeLabel: labels[key] };
 }
 
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex items-center justify-center min-h-[140px] text-center px-6">
-      <p className="text-[12.5px]" style={{ color: C.muted }}>{message}</p>
-    </div>
-  );
-}
+const PRESET_GROUPS: { label: string; options: { key: PresetKey; label: string }[] }[] = [
+  { label: "Recent", options: [{ key: "today", label: "Today" }, { key: "yesterday", label: "Yesterday" }, { key: "last24", label: "Last 24 hours" }] },
+  { label: "Weekly", options: [{ key: "thisweek", label: "This week" }, { key: "lastweek", label: "Last week" }, { key: "last7", label: "Last 7 days" }] },
+  { label: "Monthly", options: [{ key: "thismonth", label: "This month" }, { key: "lastmonth", label: "Last month" }, { key: "last30", label: "Last 30 days" }] },
+  { label: "Longer range", options: [{ key: "thisquarter", label: "This quarter" }, { key: "lastquarter", label: "Last quarter" }, { key: "thisyear", label: "This year" }, { key: "last90", label: "Last 90 days" }] },
+  { label: "Other", options: [{ key: "alltime", label: "All time" }, { key: "custom", label: "Custom range…" }] },
+];
 
-// ---------------------------------------------------------------------------
-// Date range filter — dropdown trigger + grouped presets + custom sub-view
-// ---------------------------------------------------------------------------
-function DateRangeFilter({
-  rangeKey, onSelectPreset, onApplyCustom, customRange,
-}: {
-  rangeKey: PresetKey;
-  onSelectPreset: (key: PresetKey) => void;
-  onApplyCustom: (from: Date, to: Date) => void;
-  customRange: { from: Date; to: Date } | null;
-}) {
+function DateRangePicker({ value, onChange }: { value: PresetKey; onChange: (key: PresetKey, from?: Date, to?: Date) => void }) {
   const [open, setOpen] = useState(false);
-  const [showCustom, setShowCustom] = useState(false);
-  const [fromStr, setFromStr] = useState(customRange ? toDateInputValue(customRange.from) : "");
-  const [toStr, setToStr] = useState(customRange ? toDateInputValue(customRange.to) : toDateInputValue(NOW));
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState<"presets" | "custom">("presets");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  const todayStr = NOW.toISOString().slice(0, 10);
 
   useEffect(() => {
-    function onDown(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setShowCustom(false);
-      }
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") { setOpen(false); setShowCustom(false); }
-    }
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDown); document.removeEventListener("keydown", onKey); };
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setView("presets"); } };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); setView("presets"); } };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("keydown", esc); };
   }, []);
 
-  const todayStr = toDateInputValue(NOW);
-  const fromDate = fromStr ? new Date(fromStr + "T00:00:00") : null;
-  const toDate = toStr ? new Date(toStr + "T00:00:00") : null;
-  const isAfter = !!(fromDate && toDate && fromDate.getTime() > toDate.getTime());
-  const isValid = !!fromStr && !!toStr && !isAfter;
+  const resolved = resolvePreset(value);
+  const triggerLabel = resolved.rangeLabel;
 
-  const triggerLabel = rangeKey === "custom" && customRange
-    ? `${formatShort(customRange.from)} – ${formatShort(customRange.to)}, ${customRange.to.getFullYear()}`
-    : PRESET_LABEL[rangeKey];
-
-  function openCustomView() {
-    setShowCustom(true);
-    if (!fromStr) setFromStr(customRange ? toDateInputValue(customRange.from) : toDateInputValue(addDays(NOW, -7)));
-    if (!toStr) setToStr(customRange ? toDateInputValue(customRange.to) : todayStr);
-  }
-
-  function handleApply() {
-    if (!isValid || !fromDate || !toDate) return;
-    onApplyCustom(fromDate, toDate);
+  const selectPreset = (key: PresetKey) => {
+    if (key === "custom") { setView("custom"); return; }
+    onChange(key);
     setOpen(false);
-    setShowCustom(false);
-  }
+  };
+
+  const applyCustom = () => {
+    if (!customFrom || !customTo || customFrom > customTo) return;
+    onChange("custom", new Date(customFrom), new Date(customTo));
+    setOpen(false);
+    setView("presets");
+  };
+
+  const customInvalid = !!(customFrom && customTo && customFrom > customTo);
+  const customReady = !!(customFrom && customTo && !customInvalid);
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-white text-[13px] font-medium transition-colors"
-        style={{ borderColor: open ? C.blue : C.hairline, color: C.ink }}
+        onClick={() => { setOpen(v => !v); if (!open) setView("presets"); }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex items-center gap-2 h-9 px-3 rounded-lg text-xs font-medium transition-colors bg-white select-none"
+        style={{ border: `1px solid ${open ? C.primary200 : C.neutral200}`, color: C.neutral700, boxShadow: "0 1px 2px rgba(0,0,0,0.04)" }}
       >
-        <CalendarDays size={14} style={{ color: C.muted }} />
-        {triggerLabel}
-        <ChevronDown size={14} style={{ color: C.muted, transform: open ? "rotate(180deg)" : undefined, transition: "transform 120ms" }} />
+        <Calendar className="w-3.5 h-3.5 flex-shrink-0" style={{ color: C.neutral400 }} />
+        <span style={{ minWidth: "7rem", maxWidth: "14rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{triggerLabel}</span>
+        <ChevronDownIcon className="w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200" style={{ color: C.neutral400, transform: open ? "rotate(180deg)" : "rotate(0deg)" }} />
       </button>
 
-      {open && !showCustom && (
-        <div className="absolute right-0 mt-1.5 w-56 h-[320px] overflow-y-auto rounded-lg border border-[#E5E7EB] bg-white shadow-[0_8px_24px_rgba(20,20,43,0.12)] py-1.5 z-20">
-          {PRESET_GROUPS.map((group, gi) => (
-            <div key={group.label}>
-              {gi > 0 && <div className="my-1.5 border-t" style={{ borderColor: C.divider }} />}
-              <div className="px-3 pt-1 pb-1 text-[10px] font-semibold tracking-wide uppercase" style={{ color: C.muted }}>
-                {group.label}
-              </div>
-              {group.options.map((opt) => {
-                const active = rangeKey === opt.key;
-                return (
-                  <button
-                    key={opt.key}
-                    onClick={() => (opt.key === "custom" ? openCustomView() : (onSelectPreset(opt.key), setOpen(false)))}
-                    className="w-full flex items-center justify-between px-3 py-1.5 text-[12.5px] text-left transition-colors"
-                    style={{ backgroundColor: active ? C.mist : "transparent", color: active ? C.purple : C.ink }}
-                    onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = C.canvas; }}
-                    onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}
-                  >
-                    {opt.label}
-                    {active && <span style={{ color: C.purple }}>✓</span>}
-                  </button>
-                );
-              })}
+      {open && (
+        <div
+          className="absolute right-0 z-40 bg-white rounded-xl overflow-hidden"
+          style={{ top: "calc(100% + 6px)", width: view === "custom" ? 288 : 224, border: `1px solid ${C.neutral200}`, boxShadow: "0 8px 24px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.06)" }}
+          role="listbox"
+        >
+          {view === "presets" && (
+            <div style={{ maxHeight: 320, overflowY: "auto" }}>
+              {PRESET_GROUPS.map((group, gi) => (
+                <div key={group.label}>
+                  {gi > 0 && <div style={{ height: 1, background: C.neutral100, margin: "4px 0" }} />}
+                  <p className="text-[10px] font-semibold uppercase tracking-widest px-3 pt-2.5 pb-1" style={{ color: C.neutral400 }}>{group.label}</p>
+                  {group.options.map(opt => {
+                    const selected = value === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        role="option"
+                        aria-selected={selected}
+                        onClick={() => selectPreset(opt.key)}
+                        className="w-full flex items-center justify-between px-3 py-1.5 text-sm text-left transition-colors"
+                        style={{ background: selected ? C.primary50 : "transparent", color: selected ? C.primary800 : C.neutral700 }}
+                        onMouseEnter={e => { if (!selected) e.currentTarget.style.background = C.neutral50; }}
+                        onMouseLeave={e => { if (!selected) e.currentTarget.style.background = "transparent"; }}
+                      >
+                        {opt.label}
+                        {selected && <Check className="w-3.5 h-3.5 flex-shrink-0" style={{ color: C.primary600 }} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+              <div style={{ height: 6 }} />
             </div>
-          ))}
-        </div>
-      )}
-
-      {open && showCustom && (
-        <div className="absolute right-0 mt-1.5 w-72 rounded-lg border border-[#E5E7EB] bg-white shadow-[0_8px_24px_rgba(20,20,43,0.12)] p-3 z-20">
-          <button
-            onClick={() => setShowCustom(false)}
-            className="flex items-center gap-1 text-[12px] font-medium mb-3"
-            style={{ color: C.slate }}
-          >
-            <ChevronLeft size={14} /> Back
-          </button>
-
-          <label className="block text-[11px] font-medium mb-1" style={{ color: C.slate }}>From</label>
-          <input
-            type="date"
-            value={fromStr}
-            max={toStr || todayStr}
-            onChange={(e) => setFromStr(e.target.value)}
-            className="w-full mb-3 px-2.5 py-1.5 rounded-md border text-[12.5px]"
-            style={{ borderColor: C.hairline, color: C.ink }}
-          />
-
-          <label className="block text-[11px] font-medium mb-1" style={{ color: C.slate }}>To</label>
-          <input
-            type="date"
-            value={toStr}
-            max={todayStr}
-            onChange={(e) => setToStr(e.target.value)}
-            className="w-full mb-2 px-2.5 py-1.5 rounded-md border text-[12.5px]"
-            style={{ borderColor: C.hairline, color: C.ink }}
-          />
-
-          {isAfter && (
-            <p className="text-[11px] mb-2" style={{ color: C.danger }}>"From" date must be before "To" date.</p>
           )}
 
-          <button
-            onClick={handleApply}
-            disabled={!isValid}
-            className="w-full py-2 rounded-md text-[13px] font-semibold text-white transition-opacity"
-            style={{ backgroundColor: C.purple, opacity: isValid ? 1 : 0.4, cursor: isValid ? "pointer" : "not-allowed" }}
-          >
-            Apply
-          </button>
+          {view === "custom" && (
+            <div className="p-3 flex flex-col gap-3">
+              <button onClick={() => setView("presets")} className="flex items-center gap-1 text-xs mb-1 w-fit" style={{ color: C.primary600, background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Back
+              </button>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: C.neutral400 }}>From</label>
+                <input type="date" max={customTo || todayStr} value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                  className="w-full h-9 rounded-lg px-3 text-sm" style={{ border: `1px solid ${customInvalid ? C.destructive500 : C.neutral200}`, background: C.neutral50, color: C.neutral800, outline: "none" }} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: C.neutral400 }}>To</label>
+                <input type="date" min={customFrom || undefined} max={todayStr} value={customTo} onChange={e => setCustomTo(e.target.value)}
+                  className="w-full h-9 rounded-lg px-3 text-sm" style={{ border: `1px solid ${customInvalid ? C.destructive500 : C.neutral200}`, background: C.neutral50, color: C.neutral800, outline: "none" }} />
+              </div>
+              <p className="text-xs" style={{ color: C.destructive600, minHeight: 16 }}>{customInvalid ? "Start date must be before end date." : ""}</p>
+              <button onClick={applyCustom} disabled={!customReady} className="w-full h-9 rounded-lg text-sm font-medium transition-opacity"
+                style={{ background: C.primary600, color: "#fff", border: "none", opacity: customReady ? 1 : 0.4, cursor: customReady ? "pointer" : "not-allowed" }}>
+                Apply
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main dashboard
-// ---------------------------------------------------------------------------
-export default function CXODashboardMock() {
-  const [selected, setSelected] = useState<DeptKey | "all">("all");
-  const [rangeKey, setRangeKey] = useState<PresetKey>("thisWeek");
-  const [customRange, setCustomRange] = useState<{ from: Date; to: Date } | null>(null);
+// ============================================================================
+// Generic multi-select filter — options are always passed in dynamically
+// (never a hardcoded master list), so state/client lists only ever show
+// values that actually occur on a raised ticket.
+// ============================================================================
 
-  function handleSelectPreset(key: PresetKey) {
-    setRangeKey(key);
-  }
-  function handleApplyCustom(from: Date, to: Date) {
-    setCustomRange({ from, to });
-    setRangeKey("custom");
-  }
+function MultiSelectFilter({
+  label,
+  icon,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  options: { id: string; label: string }[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
 
-  const range = useMemo(() => resolvePresetRange(rangeKey, customRange), [rangeKey, customRange]);
-  const previousRange = useMemo(() => getPreviousRange(range), [range]);
-  const rangeDays = (range.end.getTime() - range.start.getTime()) / 86_400_000;
-  const useDaily = rangeDays <= 35;
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
-  // continuous scaling factor derived from the actual selected window length,
-  // relative to the ~6-month baseline the mock department totals were tuned for.
-  // short windows (Today, Last 24 hours) legitimately round down to 0 for
-  // smaller departments — that's intentional, it's what drives the empty states.
-  const factor = Math.min(rangeDays / BASELINE_DAYS, 2.2);
+  const allSelected = selected.length === 0;
+  const toggle = (id: string) => {
+    if (selected.includes(id)) onChange(selected.filter(s => s !== id));
+    else onChange([...selected, id]);
+  };
 
-  const scaledDepartments: DeptSnapshot[] = useMemo(
-    () =>
-      DEPARTMENTS.map((d) => ({
-        ...d,
-        open: Math.round(d.open * factor),
-        inProgress: Math.round(d.inProgress * factor),
-        onHold: Math.round(d.onHold * factor),
-        resolved: Math.round(d.resolved * factor),
-        slaBreached: Math.round(d.slaBreached * factor),
-        priority: {
-          P1: Math.round(d.priority.P1 * factor),
-          P2: Math.round(d.priority.P2 * factor),
-          P3: Math.round(d.priority.P3 * factor),
-          P4: Math.round(d.priority.P4 * factor),
-        },
-      })),
-    [factor]
-  );
-
-  const volumeTrend = useMemo(
-    () => filterByRange(useDaily ? VOLUME_TREND_DAILY : VOLUME_TREND_FULL, range, !useDaily),
-    [range, useDaily]
-  );
-  const slaTrendData = useMemo(
-    () => filterByRange(useDaily ? SLA_TREND_DATA_DAILY : SLA_TREND_DATA_FULL, range, !useDaily),
-    [range, useDaily]
-  );
-  const previousVolumeTrend = useMemo(
-    () => filterByRange(useDaily ? VOLUME_TREND_DAILY : VOLUME_TREND_FULL, previousRange, !useDaily),
-    [previousRange, useDaily]
-  );
-  const previousSlaTrendData = useMemo(
-    () => filterByRange(useDaily ? SLA_TREND_DATA_DAILY : SLA_TREND_DATA_FULL, previousRange, !useDaily),
-    [previousRange, useDaily]
-  );
-  // thin out x-axis labels for dense daily series so they don't collide
-  const xAxisInterval = volumeTrend.length > 10 ? Math.max(0, Math.ceil(volumeTrend.length / 7) - 1) : 0;
-
-  const volumeIsEmpty = volumeTrend.every((p) => p.created === 0 && p.resolved === 0);
-  function avgCompliance(rows: { [k: string]: any }[]): number | null {
-    const vals: number[] = [];
-    rows.forEach((r) => DEPARTMENTS.forEach((d) => { const v = r[d.key]; if (typeof v === "number") vals.push(v); }));
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-  }
-  const slaTrendIsEmpty = slaTrendData.length === 0;
-
-  // real (not proportionally-scaled) deltas vs the immediately preceding period of equal length
-  const resolvedSum = volumeTrend.reduce((s, p) => s + p.resolved, 0);
-  const prevResolvedSum = previousVolumeTrend.reduce((s, p) => s + p.resolved, 0);
-  const resolvedDeltaPct = prevResolvedSum > 0 ? Math.round(((resolvedSum - prevResolvedSum) / prevResolvedSum) * 1000) / 10 : null;
-
-  const currentCompliance = avgCompliance(slaTrendData);
-  const previousCompliance = avgCompliance(previousSlaTrendData);
-  const breachedDeltaPct =
-    currentCompliance != null && previousCompliance != null && 100 - previousCompliance > 0
-      ? Math.round((((100 - currentCompliance) - (100 - previousCompliance)) / (100 - previousCompliance)) * 1000) / 10
-      : null;
-
-  const scope: DeptSnapshot[] = useMemo(
-    () => (selected === "all" ? scaledDepartments : scaledDepartments.filter((d) => d.key === selected)),
-    [selected, scaledDepartments]
-  );
-
-  const totals = useMemo(() => {
-    const total = scope.reduce((s, d) => s + d.open + d.inProgress + d.onHold + d.resolved, 0);
-    const open = scope.reduce((s, d) => s + d.open, 0);
-    const onHold = scope.reduce((s, d) => s + d.onHold, 0);
-    const slaBreached = scope.reduce((s, d) => s + d.slaBreached, 0);
-    const resolved = scope.reduce((s, d) => s + d.resolved, 0);
-    const closedTickets = resolved + slaBreached;
-    const slaCompliance = closedTickets > 0 ? Math.round(((closedTickets - slaBreached) / closedTickets) * 100) : null;
-    const avgTat = scope.reduce((s, d) => s + d.avgTatHrs, 0) / scope.length;
-    return { total, open, onHold, slaBreached, resolved, slaCompliance, avgTat };
-  }, [scope]);
-
-  const priorityTotals = useMemo(() => {
-    const p = { P1: 0, P2: 0, P3: 0, P4: 0 };
-    scope.forEach((d) => {
-      p.P1 += d.priority.P1; p.P2 += d.priority.P2; p.P3 += d.priority.P3; p.P4 += d.priority.P4;
-    });
-    return p;
-  }, [scope]);
-  const priorityMax = Math.max(...Object.values(priorityTotals));
-  const priorityIsEmpty = priorityMax === 0;
-
-  const pulseData = scaledDepartments.map((d) => {
-    const total = d.open + d.inProgress + d.onHold + d.resolved;
-    const closed = d.resolved + d.slaBreached;
-    return {
-      key: d.key,
-      name: d.name,
-      Open: d.open,
-      "In Progress": d.inProgress,
-      "On Hold": d.onHold,
-      Resolved: d.resolved,
-      total,
-      slaPct: closed > 0 ? Math.round((d.resolved / closed) * 100) : null,
-    };
-  }).sort((a, b) => b.total - a.total);
-  const pulseIsEmpty = pulseData.every((r) => r.total === 0);
-
-  const riskFiltered = selected === "all" ? AT_RISK : AT_RISK.filter((t) => t.dept === selected);
-
-
-  const gaugeCirc = 2 * Math.PI * 42;
-  const gaugeOffset = totals.slaCompliance != null ? gaugeCirc - (totals.slaCompliance / 100) * gaugeCirc : gaugeCirc;
-  const gaugeColor = totals.slaCompliance == null ? C.hairline : totals.slaCompliance >= 90 ? C.darkTeal : totals.slaCompliance >= 80 ? C.amber : C.danger;
+  const triggerLabel = allSelected
+    ? `All ${label.toLowerCase()}`
+    : selected.length === 1
+    ? options.find(o => o.id === selected[0])?.label ?? label
+    : `${label} (${selected.length})`;
 
   return (
-    <div className="min-h-screen w-full" style={{ backgroundColor: C.canvas, fontFamily: "'Inter', ui-sans-serif, system-ui, sans-serif" }}>
-      <div className="max-w-[1240px] mx-auto px-6 py-6">
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 h-9 px-3 rounded-lg text-xs font-medium transition-colors bg-white select-none"
+        style={{
+          border: `1px solid ${open ? C.primary200 : C.neutral200}`,
+          color: allSelected ? C.neutral700 : C.primary700,
+          boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+          minWidth: "9rem",
+        }}
+      >
+        <span className="flex-shrink-0" style={{ color: C.neutral400 }}>{icon}</span>
+        <span className="flex-1 truncate text-left max-w-[9rem]">{triggerLabel}</span>
+        <ChevronDownIcon className="w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200" style={{ color: C.neutral400, transform: open ? "rotate(180deg)" : "rotate(0deg)" }} />
+      </button>
 
+      {open && (
+        <div
+          className="absolute left-0 z-40 bg-white rounded-xl overflow-hidden"
+          style={{ top: "calc(100% + 6px)", width: 240, border: `1px solid ${C.neutral200}`, boxShadow: "0 8px 24px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.06)" }}
+        >
+          <div style={{ maxHeight: 280, overflowY: "auto" }}>
+            <button
+              onClick={() => onChange([])}
+              className="w-full flex items-center justify-between px-3 py-2 text-left text-sm transition-colors"
+              style={{ background: allSelected ? C.primary50 : "transparent", color: allSelected ? C.primary800 : C.neutral700 }}
+              onMouseEnter={e => { if (!allSelected) e.currentTarget.style.background = C.neutral50; }}
+              onMouseLeave={e => { if (!allSelected) e.currentTarget.style.background = "transparent"; }}
+            >
+              All {label.toLowerCase()}
+              {allSelected && <Check className="w-3.5 h-3.5" style={{ color: C.primary600 }} />}
+            </button>
+            <div style={{ height: 1, background: C.neutral100, margin: "4px 0" }} />
+            {options.length === 0 && <p className="px-3 py-3 text-xs" style={{ color: C.neutral400 }}>No options in current scope</p>}
+            {options.map(opt => {
+              const sel = selected.includes(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => toggle(opt.id)}
+                  className="w-full flex items-center justify-between px-3 py-1.5 text-left text-sm transition-colors"
+                  style={{ background: sel ? C.primary50 : "transparent", color: sel ? C.primary800 : C.neutral700 }}
+                  onMouseEnter={e => { if (!sel) e.currentTarget.style.background = C.neutral50; }}
+                  onMouseLeave={e => { if (!sel) e.currentTarget.style.background = "transparent"; }}
+                >
+                  <span className="truncate">{opt.label}</span>
+                  {sel && <Check className="w-3.5 h-3.5 flex-shrink-0 ml-2" style={{ color: C.primary600 }} />}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ height: 6 }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Main analytics view
+// ============================================================================
+
+const STATUS_OPTIONS: TicketStatus[] = ["OPEN", "IN_PROGRESS", "ON_HOLD", "RESOLVED"];
+
+export default function ManagerAnalyticsMock() {
+  // ── date range ──────────────────────────────────────────────────────────
+  const [selectedPreset, setSelectedPreset] = useState<PresetKey>("thismonth");
+  const [customFrom, setCustomFrom] = useState<Date | undefined>();
+  const [customTo, setCustomTo] = useState<Date | undefined>();
+
+  const { rangeStart, rangeEnd, rangeLabel } = useMemo(
+    () => resolvePreset(selectedPreset, customFrom, customTo),
+    [selectedPreset, customFrom, customTo]
+  );
+
+  const handleRangeChange = (key: PresetKey, from?: Date, to?: Date) => {
+    setSelectedPreset(key);
+    if (key === "custom") { setCustomFrom(from); setCustomTo(to); }
+  };
+
+  // ── filters ─────────────────────────────────────────────────────────────
+  // Empty array = "all" for every filter below.
+  const [selectedDeptIds, setSelectedDeptIds] = useState<string[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedStates, setSelectedStates] = useState<string[]>([]);
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+
+  const inRange = (d: Date, from: Date, to: Date) => d.getTime() >= from.getTime() && d.getTime() <= to.getTime();
+
+  // Departments currently in scope of the department filter — everything
+  // downstream (state/client option lists, department chart) respects this.
+  const deptScopedTickets = useMemo(
+    () => (selectedDeptIds.length === 0 ? ALL_TICKETS : ALL_TICKETS.filter(t => selectedDeptIds.includes(t.departmentId))),
+    [selectedDeptIds]
+  );
+
+  const availableStates = useMemo(
+    () => Array.from(new Set(deptScopedTickets.map(t => t.state))).sort().map(s => ({ id: s, label: s })),
+    [deptScopedTickets]
+  );
+  const availableClients = useMemo(
+    () => Array.from(new Set(deptScopedTickets.map(t => t.clientName))).sort().map(c => ({ id: c, label: c })),
+    [deptScopedTickets]
+  );
+
+  // Prune stale selections when the department filter narrows the available
+  // states/clients (keeps the filter bar internally consistent).
+  useEffect(() => {
+    const validStates = new Set(availableStates.map(s => s.id));
+    setSelectedStates(prev => prev.filter(s => validStates.has(s)));
+  }, [availableStates]);
+  useEffect(() => {
+    const validClients = new Set(availableClients.map(c => c.id));
+    setSelectedClients(prev => prev.filter(c => validClients.has(c)));
+  }, [availableClients]);
+
+  // Fully filtered ticket set — every card, chart and TAT figure reads from this.
+  const TICKETS = useMemo(() => {
+    return ALL_TICKETS.filter(t =>
+      (selectedDeptIds.length === 0 || selectedDeptIds.includes(t.departmentId)) &&
+      (selectedStatuses.length === 0 || selectedStatuses.includes(t.status)) &&
+      (selectedStates.length === 0 || selectedStates.includes(t.state)) &&
+      (selectedClients.length === 0 || selectedClients.includes(t.clientName)) &&
+      inRange(t.createdAt, rangeStart, rangeEnd)
+    );
+  }, [selectedDeptIds, selectedStatuses, selectedStates, selectedClients, rangeStart, rangeEnd]);
+
+  const scopedDepartments = useMemo(
+    () => (selectedDeptIds.length === 0 ? ALL_DEPARTMENTS : ALL_DEPARTMENTS.filter(d => selectedDeptIds.includes(d.id))),
+    [selectedDeptIds]
+  );
+
+  const deptLabel = selectedDeptIds.length === 0
+    ? "All departments"
+    : selectedDeptIds.length === 1
+    ? ALL_DEPARTMENTS.find(d => d.id === selectedDeptIds[0])?.name ?? "1 department"
+    : `${selectedDeptIds.length} departments selected`;
+
+  // ── KPIs ────────────────────────────────────────────────────────────────
+  const stats = useMemo(() => {
+    const totalComplaints = TICKETS.length;
+    const resolved = TICKETS.filter(t => t.status === "RESOLVED");
+    const resolvedCount = resolved.length;
+    const onHoldCount = TICKETS.filter(t => t.status === "ON_HOLD").length;
+    const slaBreachedCount = TICKETS.filter(t => t.slaBreached).length;
+    const resolutionRate = totalComplaints ? resolvedCount / totalComplaints : 0;
+    const avgResolutionHours = resolvedCount ? resolved.reduce((s, t) => s + t.turnoverHours, 0) / resolvedCount : 0;
+    return { totalComplaints, resolvedCount, onHoldCount, slaBreachedCount, resolutionRate, avgResolutionHours };
+  }, [TICKETS]);
+
+  // ── chart data ──────────────────────────────────────────────────────────
+  const statusDistribution = useMemo(
+    () => STATUS_OPTIONS.map(s => ({ status: s, name: STATUS_LABEL[s], count: TICKETS.filter(t => t.status === s).length })),
+    [TICKETS]
+  );
+
+  const deptDistribution = useMemo(
+    () => scopedDepartments
+      .map(d => ({ name: d.name, count: TICKETS.filter(t => t.departmentId === d.id).length }))
+      .sort((a, b) => b.count - a.count),
+    [scopedDepartments, TICKETS]
+  );
+
+  const stateDistribution = useMemo(
+    () => availableStates
+      .map(s => ({ name: s.id, count: TICKETS.filter(t => t.state === s.id).length }))
+      .filter(s => s.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10),
+    [availableStates, TICKETS]
+  );
+
+  const clientDistribution = useMemo(
+    () => availableClients
+      .map(c => ({ name: c.id, count: TICKETS.filter(t => t.clientName === c.id).length }))
+      .filter(c => c.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10),
+    [availableClients, TICKETS]
+  );
+
+  // ── average TAT ─────────────────────────────────────────────────────────
+  const tatByDept = useMemo(
+    () => scopedDepartments.map(d => {
+      const resolved = TICKETS.filter(t => t.departmentId === d.id && t.status === "RESOLVED");
+      const avgHours = resolved.length ? resolved.reduce((s, t) => s + t.turnoverHours, 0) / resolved.length : 0;
+      return { name: d.name, avgHours: Number(avgHours.toFixed(1)), resolvedCount: resolved.length };
+    }),
+    [scopedDepartments, TICKETS]
+  );
+
+  const overallAvgTat = useMemo(() => {
+    const resolved = TICKETS.filter(t => t.status === "RESOLVED");
+    return resolved.length ? resolved.reduce((s, t) => s + t.turnoverHours, 0) / resolved.length : 0;
+  }, [TICKETS]);
+
+  const [tatDeptId, setTatDeptId] = useState<string>(ALL_DEPARTMENTS[0].id);
+  useEffect(() => {
+    if (scopedDepartments.length && !scopedDepartments.some(d => d.id === tatDeptId)) {
+      setTatDeptId(scopedDepartments[0].id);
+    }
+  }, [scopedDepartments, tatDeptId]);
+
+  const tatByCategory = useMemo(() => {
+    const cats = ALL_CATEGORIES.filter(c => c.departmentId === tatDeptId);
+    return cats.map(cat => {
+      const resolved = TICKETS.filter(t => t.categoryId === cat.id && t.status === "RESOLVED");
+      const avgHours = resolved.length ? resolved.reduce((s, t) => s + t.turnoverHours, 0) / resolved.length : 0;
+      return { name: cat.name, avgHours: Number(avgHours.toFixed(1)), resolvedCount: resolved.length };
+    });
+  }, [tatDeptId, TICKETS]);
+
+  const activeFilterCount =
+    (selectedDeptIds.length ? 1 : 0) + (selectedStatuses.length ? 1 : 0) + (selectedStates.length ? 1 : 0) + (selectedClients.length ? 1 : 0);
+
+  const clearAllFilters = () => {
+    setSelectedDeptIds([]);
+    setSelectedStatuses([]);
+    setSelectedStates([]);
+    setSelectedClients([]);
+  };
+
+  return (
+    <div className="min-h-screen font-sans" style={{ backgroundColor: C.neutral50, color: C.neutral900 }}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${C.purple}, ${C.blue})` }}>
-              <img src={"../../assets/logo.jpg"} alt=""  />
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div>
+            <p className="text-xs font-mono uppercase tracking-widest mb-1 flex items-center gap-1.5" style={{ color: C.neutral400 }}>
+              <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: C.primary500 }} />
+              Manager Console &middot; Analytics
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: C.neutral900 }}>{deptLabel}</h1>
+            <p className="text-sm mt-0.5" style={{ color: C.neutral500 }}>
+              {ALL_DEPARTMENTS.length} departments under you &middot; as of {NOW.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+            </p>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white rounded-xl shadow-sm p-3 mb-6 flex flex-wrap items-center gap-2" style={{ border: `1px solid ${C.neutral200}` }}>
+          <span className="text-[11px] font-semibold uppercase tracking-widest px-1 flex items-center gap-1" style={{ color: C.neutral400 }}>Filters</span>
+
+          <MultiSelectFilter
+            label="Departments"
+            icon={<Building2 className="w-3.5 h-3.5" />}
+            options={ALL_DEPARTMENTS.map(d => ({ id: d.id, label: d.name }))}
+            selected={selectedDeptIds}
+            onChange={setSelectedDeptIds}
+          />
+          <MultiSelectFilter
+            label="Status"
+            icon={<CircleDot className="w-3.5 h-3.5" />}
+            options={STATUS_OPTIONS.map(s => ({ id: s, label: STATUS_LABEL[s] }))}
+            selected={selectedStatuses}
+            onChange={setSelectedStatuses}
+          />
+          <MultiSelectFilter
+            label="States"
+            icon={<MapPin className="w-3.5 h-3.5" />}
+            options={availableStates}
+            selected={selectedStates}
+            onChange={setSelectedStates}
+          />
+          <MultiSelectFilter
+            label="Clients"
+            icon={<Briefcase className="w-3.5 h-3.5" />}
+            options={availableClients}
+            selected={selectedClients}
+            onChange={setSelectedClients}
+          />
+
+          <div className="ml-auto flex items-center gap-2">
+            {activeFilterCount > 0 && (
+              <button
+                onClick={clearAllFilters}
+                className="flex items-center gap-1 h-9 px-2.5 rounded-lg text-xs font-medium transition-colors"
+                style={{ color: C.neutral500 }}
+              >
+                <X className="w-3.5 h-3.5" />
+                Clear ({activeFilterCount})
+              </button>
+            )}
+            <DateRangePicker value={selectedPreset} onChange={handleRangeChange} />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-6">
+          {/* KPI cards */}
+          <div>
+            <p className="text-xs font-mono uppercase tracking-widest mb-2" style={{ color: C.neutral400 }}>Period: {rangeLabel}</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              <KpiCard icon={<TicketIcon className="w-4 h-4" />} label="Total complaints" value={stats.totalComplaints.toString()} tone="neutral" />
+              <KpiCard icon={<CheckCircle2 className="w-4 h-4" />} label="Resolved" value={stats.resolvedCount.toString()} tone="good" />
+              <KpiCard icon={<PauseCircle className="w-4 h-4" />} label="On hold" value={stats.onHoldCount.toString()} tone="warning" />
+              <KpiCard icon={<Percent className="w-4 h-4" />} label="Resolution rate" value={fmtPct(stats.resolutionRate)} tone="info" />
+              <KpiCard
+                icon={<AlertTriangle className="w-4 h-4" />}
+                label="SLA breached"
+                value={stats.slaBreachedCount.toString()}
+                tone={stats.slaBreachedCount > 0 ? "critical" : "good"}
+                pulse={stats.slaBreachedCount > 0}
+              />
+              <KpiCard icon={<Clock className="w-4 h-4" />} label="Avg. resolution time" value={fmtHours(stats.avgResolutionHours)} tone="neutral" />
             </div>
+          </div>
+
+          {/* Status distribution + department volume */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <SectionCard title="Ticket status distribution" subtitle={`All tickets in scope, by current status — ${rangeLabel}`}>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={statusDistribution} dataKey="count" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={3}>
+                    {statusDistribution.map(s => (
+                      <Cell key={s.status} fill={STATUS_COLOR[s.status]} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, fontFamily: "ui-monospace" }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </SectionCard>
+
+            <SectionCard title="Tickets by department" subtitle={`Volume raised per department — ${rangeLabel}`}>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={deptDistribution} layout="vertical" margin={{ left: 8, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: AXIS_TICK }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: C.neutral700 }} axisLine={false} tickLine={false} width={130} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <Bar dataKey="count" fill={ACCENT_SECONDARY} radius={[0, 4, 4, 0]} name="Tickets" />
+                </BarChart>
+              </ResponsiveContainer>
+            </SectionCard>
+          </div>
+
+          {/* State + client volume */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <SectionCard title="Tickets by state" subtitle="Only states actually captured on raised tickets, top 10 shown">
+              {stateDistribution.length === 0 ? (
+                <p className="text-sm py-8 text-center" style={{ color: C.neutral400 }}>No tickets match the current filters</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={Math.max(180, stateDistribution.length * 32)}>
+                  <BarChart data={stateDistribution} layout="vertical" margin={{ left: 8, right: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: AXIS_TICK }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: C.neutral700 }} axisLine={false} tickLine={false} width={100} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Bar dataKey="count" fill={ACCENT_CHART_B} radius={[0, 4, 4, 0]} name="Tickets" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </SectionCard>
+
+            <SectionCard title="Tickets by client" subtitle="Only clients actually named on raised tickets, top 10 shown">
+              {clientDistribution.length === 0 ? (
+                <p className="text-sm py-8 text-center" style={{ color: C.neutral400 }}>No tickets match the current filters</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={Math.max(180, clientDistribution.length * 32)}>
+                  <BarChart data={clientDistribution} layout="vertical" margin={{ left: 8, right: 16 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: AXIS_TICK }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: C.neutral700 }} axisLine={false} tickLine={false} width={130} />
+                    <Tooltip contentStyle={TOOLTIP_STYLE} />
+                    <Bar dataKey="count" fill={ACCENT_CHART_C} radius={[0, 4, 4, 0]} name="Tickets" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </SectionCard>
+          </div>
+
+          {/* Average TAT analysis */}
+          <SectionCard
+            title="Average TAT analysis"
+            subtitle={`Turnaround time on resolved tickets — ${rangeLabel}`}
+            right={<Gauge className="w-4 h-4" style={{ color: C.neutral400 }} />}
+          >
+            <div className="flex flex-wrap items-baseline gap-3 pb-1">
+              <span className="text-xs font-mono uppercase tracking-widest" style={{ color: C.neutral400 }}>Overall avg. TAT</span>
+              <span className="text-xl font-mono font-semibold" style={{ color: C.neutral900 }}>{fmtHours(overallAvgTat)}</span>
+              <span className="text-xs" style={{ color: C.neutral400 }}>across {stats.resolvedCount} resolved tickets in scope</span>
+            </div>
+
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-[18px] font-bold" style={{ color: C.ink }}>CUSTOMER PULSE — Executive Overview</h1>
-              </div>
-              <p className="text-[12.5px]" style={{ color: C.slate }}>Org-wide ticket performance across all departments · updated moments ago</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <DateRangeFilter
-              rangeKey={rangeKey}
-              onSelectPreset={handleSelectPreset}
-              onApplyCustom={handleApplyCustom}
-              customRange={customRange}
-            />
-
-
-            <div className="flex items-center gap-2.5 pl-3 border-l border-[#E5E7EB]">
-              <div className="h-8 w-8 rounded-full flex items-center justify-center text-white text-[12px] font-semibold" style={{ backgroundColor: C.purple }}>PK</div>
-              <div className="leading-tight">
-                <div className="text-[12.5px] font-semibold" style={{ color: C.ink }}>Priya Kulkarni</div>
-                <div className="text-[11px]" style={{ color: C.slate }}>CXO</div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Department filter chips */}
-        <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
-          <Chip label="All departments" active={selected === "all"} onClick={() => setSelected("all")} />
-          {DEPARTMENTS.map((d) => (
-            <Chip key={d.key} label={d.name} active={selected === d.key} onClick={() => setSelected(d.key)} dotColor={C.purple} />
-          ))}
-        </div>
-
-        {/* KPI row */}
-        <div className="flex gap-3 flex-wrap mb-5">
-          <KpiCard icon={Ticket} label="Total tickets" value={fmt(totals.total)} sub={selected === "all" ? "across 5 departments" : DEPT_LABEL[selected]} accent={C.purple} />
-          <KpiCard icon={FolderOpen} label="Open tickets" value={fmt(totals.open)} sub={totals.total > 0 ? `${Math.round((totals.open / totals.total) * 100)}% of total volume` : "no tickets in this window"} accent={C.blue} />
-          <KpiCard
-            icon={AlertTriangle} label="SLA breached" value={fmt(totals.slaBreached)} sub="needs escalation review" accent={C.danger}
-            delta={breachedDeltaPct != null ? { value: `${Math.abs(breachedDeltaPct)}%`, good: breachedDeltaPct <= 0 } : undefined}
-          />
-          <KpiCard icon={PauseCircle} label="On hold" value={fmt(totals.onHold)} sub="awaiting requester / 3rd party" accent={C.amber} />
-          <KpiCard
-            icon={CheckCircle2} label="Resolved" value={fmt(totals.resolved)} sub="in selected period" accent={C.darkTeal}
-            delta={resolvedDeltaPct != null ? { value: `${Math.abs(resolvedDeltaPct)}%`, good: resolvedDeltaPct >= 0 } : undefined}
-          />
-          <KpiCard icon={TrendingUp} label="Avg turnaround" value={`${totals.avgTat.toFixed(1)}h`} sub="request to resolution" accent={C.cyan} />
-        </div>
-
-        {/* Signature: Department Pulse + SLA gauge */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-4 mb-4">
-          <SectionCard
-            title="Department pulse"
-            subtitle="Live ticket mix per department, ranked by volume — scan for imbalance at a glance"
-            right={<Legend2 items={[
-              { label: "Open", color: C.blue }, { label: "In progress", color: C.cyan },
-              { label: "On hold", color: C.amber }, { label: "Resolved", color: C.darkTeal },
-            ]} />}
-          >
-            {pulseIsEmpty ? (
-              <EmptyState message="No tickets in the selected window." />
-            ) : (
-              <div className="space-y-3.5">
-                {pulseData.map((row) => (
-                  <div key={row.key} className={`rounded-lg -mx-2 px-2 py-1.5 transition-colors ${selected === row.key ? "bg-[#E1E1FE]" : ""}`}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[13px] font-semibold" style={{ color: C.ink }}>{row.name}</span>
-                        <span className="text-[11px]" style={{ color: C.slate }}>{fmt(row.total)} tickets</span>
-                      </div>
-                      {row.slaPct != null ? (
-                        <span
-                          className="text-[11px] font-semibold px-1.5 py-0.5 rounded"
-                          style={{ color: row.slaPct >= 90 ? C.darkTeal : row.slaPct >= 80 ? C.amber : C.danger,
-                                   backgroundColor: row.slaPct >= 90 ? C.successTint : row.slaPct >= 80 ? C.amberTint : C.dangerTint }}
-                        >
-                          {row.slaPct}% SLA
-                        </span>
-                      ) : (
-                        <span className="text-[11px]" style={{ color: C.muted }}>No closed tickets</span>
-                      )}
-                    </div>
-                    {row.total > 0 ? (
-                      <div className="h-3.5 w-full rounded-full overflow-hidden flex bg-[#F0F1F6]">
-                        {(["Open", "In Progress", "On Hold", "Resolved"] as const).map((s) => {
-                          const w = (row[s] / row.total) * 100;
-                          return w > 0 ? <div key={s} style={{ width: `${w}%`, backgroundColor: STATUS_COLOR[s] }} /> : null;
-                        })}
-                      </div>
-                    ) : (
-                      <div className="h-3.5 w-full rounded-full bg-[#F0F1F6]" />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </SectionCard>
-
-          <SectionCard title="Org SLA compliance" subtitle="Resolved within deadline">
-            <div className="flex flex-col items-center justify-center h-full pt-1">
-              <div className="relative h-32 w-32">
-                <svg viewBox="0 0 100 100" className="h-32 w-32 -rotate-90">
-                  <circle cx="50" cy="50" r="42" fill="none" stroke="#F0F1F6" strokeWidth="9" />
-                  <circle
-                    cx="50" cy="50" r="42" fill="none" stroke={gaugeColor} strokeWidth="9"
-                    strokeDasharray={gaugeCirc} strokeDashoffset={gaugeOffset} strokeLinecap="round"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-2xl font-bold" style={{ color: C.ink }}>{totals.slaCompliance != null ? `${totals.slaCompliance}%` : "—"}</span>
-                  <span className="text-[10px]" style={{ color: C.slate }}>target 90%</span>
-                </div>
-              </div>
-              <p className="text-[11.5px] text-center mt-3 leading-snug" style={{ color: C.slate }}>
-                {totals.slaCompliance == null
-                  ? "No resolved tickets in this window yet."
-                  : totals.slaCompliance >= 90
-                  ? "Within target across the selected scope."
-                  : "Below the 90% target — Finance and Security are the main drag."}
-              </p>
-            </div>
-          </SectionCard>
-        </div>
-
-        {/* Trend row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-          <SectionCard title="Ticket volume trend" subtitle={`Created vs. resolved, organisation-wide · ${PRESET_LABEL[rangeKey].toLowerCase()}`}>
-            {volumeIsEmpty ? (
-              <EmptyState message="No tickets created or resolved in this window." />
-            ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={volumeTrend} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="createdGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={C.purple} stopOpacity={0.28} />
-                      <stop offset="100%" stopColor={C.purple} stopOpacity={0.02} />
-                    </linearGradient>
-                    <linearGradient id="resolvedGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={C.blue} stopOpacity={0.28} />
-                      <stop offset="100%" stopColor={C.blue} stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke={C.hairline} vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11.5, fill: C.slate }} axisLine={{ stroke: C.hairline }} tickLine={false} interval={xAxisInterval} />
-                  <YAxis tick={{ fontSize: 11.5, fill: C.slate }} axisLine={false} tickLine={false} width={36} allowDecimals={false} />
-                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.hairline}` }} />
-                  <Area type="monotone" dataKey="created" name="Created" stroke={C.purple} fill="url(#createdGrad)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                  <Area type="monotone" dataKey="resolved" name="Resolved" stroke={C.blue} fill="url(#resolvedGrad)" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                </AreaChart>
+              <p className="text-xs font-medium mb-2" style={{ color: C.neutral600 }}>By department</p>
+              <ResponsiveContainer width="100%" height={Math.max(160, tatByDept.length * 42)}>
+                <BarChart data={tatByDept} layout="vertical" margin={{ left: 8, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: AXIS_TICK }} axisLine={false} tickLine={false} unit="h" />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: C.neutral700 }} axisLine={false} tickLine={false} width={130} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [fmtHours(v), "Avg. TAT"] as [string, string]} />
+                  <Bar dataKey="avgHours" fill={ACCENT_CHART_A} radius={[0, 4, 4, 0]} name="Avg. TAT (hrs)" />
+                </BarChart>
               </ResponsiveContainer>
-            )}
-          </SectionCard>
+            </div>
 
-          <SectionCard title="SLA compliance trend" subtitle={`By department, against 90% target · ${PRESET_LABEL[rangeKey].toLowerCase()}`}>
-            {slaTrendIsEmpty ? (
-              <EmptyState message="No resolved tickets to score in this window." />
-            ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={slaTrendData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={C.hairline} vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 11.5, fill: C.slate }} axisLine={{ stroke: C.hairline }} tickLine={false} interval={xAxisInterval} />
-                  <YAxis domain={[60, 100]} tick={{ fontSize: 11.5, fill: C.slate }} axisLine={false} tickLine={false} width={36} allowDecimals={false} />
-                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: `1px solid ${C.hairline}` }} />
-                  <ReferenceLine y={90} stroke={C.slate} strokeDasharray="4 4" label={{ value: "Target", fontSize: 10, fill: C.slate, position: "insideTopRight" }} />
-                  {DEPARTMENTS.map((d, i) => (
-                    <Line
-                      key={d.key} type="monotone" dataKey={d.key} name={d.name}
-                      stroke={DEPT_CHART_COLORS[i % DEPT_CHART_COLORS.length]}
-                      strokeWidth={selected === "all" || selected === d.key ? 2.25 : 1}
-                      strokeOpacity={selected === "all" || selected === d.key ? 1 : 0.25}
-                      dot={false}
-                    />
+            <div style={{ height: 1, background: C.neutral100 }} />
+
+            <div>
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                <p className="text-xs font-medium" style={{ color: C.neutral600 }}>By category, within a department</p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {scopedDepartments.map(d => (
+                    <Chip key={d.id} label={d.name} active={tatDeptId === d.id} onClick={() => setTatDeptId(d.id)} />
                   ))}
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                </LineChart>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={Math.max(160, tatByCategory.length * 42)}>
+                <BarChart data={tatByCategory} layout="vertical" margin={{ left: 8, right: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 11, fill: AXIS_TICK }} axisLine={false} tickLine={false} unit="h" />
+                  <YAxis dataKey="name" type="category" tick={{ fontSize: 11, fill: C.neutral700 }} axisLine={false} tickLine={false} width={140} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [fmtHours(v), "Avg. TAT"] as [string, string]} />
+                  <Bar dataKey="avgHours" fill={ACCENT_PRIMARY} radius={[0, 4, 4, 0]} name="Avg. TAT (hrs)" />
+                </BarChart>
               </ResponsiveContainer>
-            )}
-          </SectionCard>
-        </div>
-
-        {/* Priority + At risk row */}
-        <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-4 mb-4">
-          <SectionCard title="Priority mix" subtitle={selected === "all" ? "All departments" : DEPT_LABEL[selected]}>
-            {priorityIsEmpty ? (
-              <EmptyState message="No tickets created in this window." />
-            ) : (
-              <>
-                <div className="space-y-3 mt-1">
-                  {(["P1", "P2", "P3", "P4"] as const).map((p) => (
-                    <div key={p}>
-                      <div className="flex items-center justify-between text-[12px] mb-1">
-                        <span className="font-semibold" style={{ color: C.ink }}>{p} {p === "P1" && <span className="text-[10px] font-medium" style={{ color: C.slate }}>· critical</span>}</span>
-                        <span style={{ color: C.slate }}>{fmt(priorityTotals[p])}</span>
-                      </div>
-                      <div className="h-2.5 rounded-full bg-[#F0F1F6] overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${(priorityTotals[p] / priorityMax) * 100}%`, backgroundColor: PRIORITY_COLOR[p] }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-4 pt-4 border-t border-[#E5E7EB] flex items-center gap-2">
-                  <Flame size={15} style={{ color: C.danger }} />
-                  <p className="text-[11.5px]" style={{ color: C.slate }}>
-                    P1 volume is up in Security & Compliance — worth a staffing check.
-                  </p>
-                </div>
-              </>
-            )}
-          </SectionCard>
-
-          <SectionCard
-            title="At-risk & breached tickets"
-            subtitle="P1/P2 tickets breached or approaching SLA deadline — live backlog, not date-filtered"
-            right={<span className="flex items-center gap-1.5 text-[11.5px] font-medium" style={{ color: C.danger }}><ShieldAlert size={14} />{riskFiltered.length} flagged</span>}
-          >
-            <div className="overflow-x-auto -mx-1">
-              <table className="w-full text-[12.5px]">
-                <thead>
-                  <tr className="text-left" style={{ color: C.slate }}>
-                    <th className="font-medium pb-2 px-1">Ticket</th>
-                    <th className="font-medium pb-2 px-1">Department</th>
-                    <th className="font-medium pb-2 px-1">Priority</th>
-                    <th className="font-medium pb-2 px-1">Age</th>
-                    <th className="font-medium pb-2 px-1">Assignee</th>
-                    <th className="font-medium pb-2 px-1">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {riskFiltered.map((t) => (
-                    <tr key={t.id} className="border-t" style={{ borderColor: C.hairline }}>
-                      <td className="py-2 px-1">
-                        <div className="font-semibold" style={{ color: C.ink }}>{t.id}</div>
-                        <div className="text-[11.5px]" style={{ color: C.slate }}>{t.title}</div>
-                      </td>
-                      <td className="py-2 px-1" style={{ color: C.slate }}>{DEPT_LABEL[t.dept]}</td>
-                      <td className="py-2 px-1">
-                        <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold text-white" style={{ backgroundColor: PRIORITY_COLOR[t.priority] }}>{t.priority}</span>
-                      </td>
-                      <td className="py-2 px-1" style={{ color: C.slate }}>{t.ageHrs}h</td>
-                      <td className="py-2 px-1" style={{ color: C.slate }}>{t.assignee}</td>
-                      <td className="py-2 px-1">
-                        <span
-                          className="px-1.5 py-0.5 rounded text-[11px] font-semibold"
-                          style={{
-                            color: t.status === "Breached" ? C.danger : C.amber,
-                            backgroundColor: t.status === "Breached" ? C.dangerTint : C.amberTint,
-                          }}
-                        >
-                          {t.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {riskFiltered.length === 0 && (
-                    <tr><td colSpan={6} className="py-6 text-center" style={{ color: C.muted }}>No flagged tickets in this department.</td></tr>
-                  )}
-                </tbody>
-              </table>
             </div>
           </SectionCard>
         </div>
-
-        {/* Department performance table */}
-        <SectionCard title="Department performance" subtitle="Headcount, load, and turnaround at a glance">
-          <div className="overflow-x-auto -mx-1">
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr className="text-left" style={{ color: C.slate }}>
-                  <th className="font-medium pb-2 px-1">Department</th>
-                  <th className="font-medium pb-2 px-1">Manager</th>
-                  <th className="font-medium pb-2 px-1">Agents</th>
-                  <th className="font-medium pb-2 px-1">Total tickets</th>
-                  <th className="font-medium pb-2 px-1">Open / agent</th>
-                  <th className="font-medium pb-2 px-1">Avg TAT</th>
-                  <th className="font-medium pb-2 px-1">SLA breached</th>
-                  <th className="font-medium pb-2 px-1">SLA %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {scaledDepartments.map((d) => {
-                  const total = d.open + d.inProgress + d.onHold + d.resolved;
-                  const closed = d.resolved + d.slaBreached;
-                  const slaPct = closed > 0 ? Math.round((d.resolved / closed) * 100) : null;
-                  const perAgent = (d.open / d.agents).toFixed(1);
-                  return (
-                    <tr key={d.key} className={`border-t ${selected === d.key ? "bg-[#E1E1FE]" : ""}`} style={{ borderColor: C.hairline }}>
-                      <td className="py-2.5 px-1 font-semibold" style={{ color: C.ink }}>{d.name}</td>
-                      <td className="py-2.5 px-1" style={{ color: C.slate }}>{d.manager}</td>
-                      <td className="py-2.5 px-1" style={{ color: C.slate }}>
-                        <span className="inline-flex items-center gap-1"><Users size={12} />{d.agents}</span>
-                      </td>
-                      <td className="py-2.5 px-1" style={{ color: C.slate }}>{fmt(total)}</td>
-                      <td className="py-2.5 px-1" style={{ color: Number(perAgent) > 8 ? C.danger : C.slate, fontWeight: Number(perAgent) > 8 ? 600 : 400 }}>{perAgent}</td>
-                      <td className="py-2.5 px-1">
-                        <span className="inline-flex items-center gap-1" style={{ color: d.tatDeltaPct > 0 ? C.danger : C.darkTeal }}>
-                          {d.avgTatHrs.toFixed(1)}h
-                          {d.tatDeltaPct > 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-1" style={{ color: C.slate }}>{d.slaBreached}</td>
-                      <td className="py-2.5 px-1">
-                        {slaPct != null ? (
-                          <span
-                            className="px-1.5 py-0.5 rounded text-[11px] font-semibold"
-                            style={{
-                              color: slaPct >= 90 ? C.darkTeal : slaPct >= 80 ? C.amber : C.danger,
-                              backgroundColor: slaPct >= 90 ? C.successTint : slaPct >= 80 ? C.amberTint : C.dangerTint,
-                            }}
-                          >
-                            {slaPct}%
-                          </span>
-                        ) : (
-                          <span className="text-[11px]" style={{ color: C.muted }}>—</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
-
-        <p className="text-center text-[11px] mt-6" style={{ color: "#9AA1B4" }}>
-          Figures are illustrative sample data for layout purposes — wire up to your ticket API to go live.
-        </p>
       </div>
     </div>
   );
