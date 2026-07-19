@@ -13,6 +13,13 @@ export enum SupportLevel {
   L4 = "L4"
 }
 
+// NOTE(added): Wind / Non-Wind / Both - AGENT only, set at onboarding.
+export enum WindCategory {
+  WIND = "WIND",
+  NON_WIND = "NON_WIND",
+  BOTH = "BOTH"
+}
+
 export enum TicketPriority {
   P1 = "P1",
   P2 = "P2",
@@ -281,6 +288,7 @@ export interface Invitation {
   categoryId?: string;
   categoryIds?: string[];
   supportLevel?: SupportLevel;
+  windCategory?: WindCategory;
   status: InvitationStatus;
   token: string;
   expiresAt: string;
