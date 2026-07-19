@@ -20,6 +20,7 @@ import { managerDashboardRouter } from "./routes/managerDashboard";
 import { requestorRouter } from "./routes/requestors";
 import { notificationRouter } from "./routes/notifications";
 import { cxoRouter } from "./routes/cxoDashboard";
+import { agentDashboardRouter } from "./routes/agentDashboard";
 
 const app = express();
 
@@ -47,6 +48,7 @@ app.use("/manager-dashboard",managerDashboardRouter)
 app.use("/admin/requestors", requestorRouter)
 app.use("/notifications", notificationRouter)
 app.use("/cxo-dashboard",cxoRouter)
+app.use("/agent-dashboard", agentDashboardRouter)
 // ---- must be last ----
 app.use(notFoundHandler);
 app.use(errorHandler);
