@@ -59,13 +59,16 @@ export function formatBytes(bytes: number) {
  * Uploads a single file straight to S3 using a presigned URL:
  *  1. ask the API for a presigned PUT URL scoped to this ticket
  *  2. PUT the raw file bytes to S3 (never touches our server)
- *  3. tell the API to record the resulting object as a ticket attachment
+ *  3. tell the API to record the resulting object as a ticket attachment,
+ *     optionally alongside a comment - if left blank, the API posts a
+ *     comment naming the file so it still shows up in the activity thread.
  */
 export async function uploadAttachmentToS3(
   file: File,
   ticketId: string,
   token: string,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  commentText?: string
 ): Promise<Attachment> {
   const presignRes = await fetch(`${API_BASE}/tickets/${ticketId}/attachments/presign`, {
     method: "POST",
@@ -99,9 +102,21 @@ export async function uploadAttachmentToS3(
   const createRes = await fetch(`${API_BASE}/tickets/${ticketId}/attachments`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ fileName: file.name, fileUrl }),
+    body: JSON.stringify({ fileName: file.name, fileUrl, commentText: commentText?.trim() || undefined }),
   });
   const attachment = await createRes.json();
   if (!createRes.ok) throw new Error(attachment.error || "Failed to save the attachment record");
   return attachment as Attachment;
+}
+
+/** Removes an attachment (and its linked comment's file reference) from a ticket. */
+export async function deleteAttachment(ticketId: string, attachmentId: string, token: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/tickets/${ticketId}/attachments/${attachmentId}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Failed to remove attachment");
+  }
 }
