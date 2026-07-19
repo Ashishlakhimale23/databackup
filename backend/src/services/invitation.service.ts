@@ -1,7 +1,7 @@
 import { prisma } from "../lib/database";
 import { generateRandomString, generateToken } from "../utils/token";
 import { notificationService } from "./notification.service";
-import { UserRole, InvitationStatus, SupportLevel, Invitation } from "../generated/prisma/client";
+import { UserRole, InvitationStatus, SupportLevel, Invitation, WindCategory } from "../generated/prisma/client";
 import { daysFromNow } from "../utils/time";
 import { signAuthToken } from "../utils/jwt";
 import bcrypt from "bcryptjs";
@@ -32,12 +32,13 @@ export const invitationService = {
     role: UserRole;
     name : string,
     state : string,
+    windCategory : WindCategory | null,
     departmentId: string;
     departmentIds : string[],
     categoryIds : string[]
     supportLevel: SupportLevel;
   }) {
-    const { name, inviter, email, role, departmentId,departmentIds, supportLevel, categoryIds,state } = params;
+    const { name, inviter, email, role, departmentId,departmentIds, supportLevel, categoryIds,state,windCategory } = params;
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) throw new InvitationError("A user with this email already exists");
@@ -78,6 +79,7 @@ export const invitationService = {
           Password: passwordHash,
           invitedById: inviter.id,
           state,
+          windCategory: windCategory ?? null,
           role,
           department: {
             connect: { id: departmentId }
@@ -225,6 +227,7 @@ export const invitationService = {
               passwordHash: invitation.Password,
               role: invitation.role,
               state : invitation.state,
+              windCategory: invitation.windCategory,
               agentsdepartmentId: deparmentId ,
               supportLevel: invitation.supportLevel,
               onboardedById: invitation.invitedById,
