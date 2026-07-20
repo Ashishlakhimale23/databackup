@@ -16,7 +16,7 @@ import {
   Info,
   Tablet
 } from "lucide-react";
-import { Ticket, Comment, Attachment, Escalation, Keyword, User as UserType, TicketStatus, TicketPriority, SupportLevel, TicketStatusHistory, PAGES, UserRole,ROLES } from "../types";
+import { Ticket, Comment, Attachment, Escalation, Keyword, User as UserType, TicketStatus, TicketPriority, SupportLevel, TicketStatusHistory, PAGES, UserRole,ROLES, Department, Client, TicketCategory, SubDepartment } from "../types";
 import { userInfo } from "os";
 import AttachmentUploader from "./AttachmentUploader";
 import { deleteAttachment } from "../libs/attachmentUpload";
@@ -36,10 +36,12 @@ interface TicketDetailProps {
   setCurrentView : React.Dispatch<React.SetStateAction<string>>,
   onBack: () => void;
   metric : metric
+  departments: Department[];
+  clients: Client[];
   
 }
 
-export default function TicketDetail({ ticketId, token, currentUser, onBack,metric,setCurrentView }: TicketDetailProps) {
+export default function TicketDetail({ ticketId, token, currentUser, onBack,metric,setCurrentView, departments, clients }: TicketDetailProps) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -70,16 +72,22 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
   const [availableAgents, setAvailableAgents] = useState<UserType[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState("");
 
-  // Edit Ticket form (GLOBAL_ADMIN only)
+  // Edit Ticket form (GLOBAL_ADMIN only) - mirrors the New Ticket form's
+  // fields, minus representative/employeeId which aren't edited here.
   const [showEditForm, setShowEditForm] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
+  const [editDeptCategories, setEditDeptCategories] = useState<TicketCategory[]>([]);
+  const [editDeptSubDepartments, setEditDeptSubDepartments] = useState<SubDepartment[]>([]);
   const [editForm, setEditForm] = useState({
     title: "",
     description: "",
+    departmentId: "",
+    subDepartmentId: "",
+    categoryId: "",
     clientName: "",
     clientEmail: "",
-    representative: "",
-    employeeId: "",
+    projectId: "",
+    designation: "",
     site: "",
     state: "",
     dateOfOccurance: "",
@@ -415,23 +423,80 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
     }
   };
 
-  // Action: Open the Edit Ticket form, pre-filled with current values
-  const openEditForm = () => {
+  // Action: Open the Edit Ticket form, pre-filled with current values.
+  // Also pre-loads the categories/sub-departments for the ticket's current
+  // department, same as the New Ticket form does on department select.
+  const openEditForm = async () => {
     if (!ticket) return;
     setEditForm({
       title: ticket.title || "",
       description: ticket.description || "",
+      departmentId: ticket.departmentId || "",
+      subDepartmentId: "",
+      categoryId: ticket.categoryId || "",
       clientName: ticket.clientName || "",
       clientEmail: ticket.clientEmail || "",
-      representative: ticket.representative || "",
-      employeeId: ticket.employeeId || "",
+      projectId: ticket.projectId || "",
+      designation: ticket.designation || "",
       site: ticket.site || "",
       state: ticket.state || "",
-      dateOfOccurance: ticket.dateOfOccurance ? ticket.dateOfOccurance.slice(0, 10) : "",
+      dateOfOccurance: ticket.dateOfOccurance ? ticket.dateOfOccurance.slice(0, 16) : "",
     });
+    setEditDeptCategories([]);
+    setEditDeptSubDepartments([]);
     setError("");
     setSuccess("");
     setShowEditForm(true);
+
+    if (ticket.departmentId) {
+      try {
+        const [catRes, subDeptRes] = await Promise.all([
+          fetch(`http://localhost:3000/departments/${ticket.departmentId}/categories`, {
+            headers: { Authorization: `Bearer ${token}` }
+          }),
+          fetch(`http://localhost:3000/departments/${ticket.departmentId}/subdepartments`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+        ]);
+        if (catRes.ok) setEditDeptCategories(await catRes.json());
+        if (subDeptRes.ok) setEditDeptSubDepartments(await subDeptRes.json());
+      } catch (err) {}
+    }
+  };
+
+  // Handles department switch inside the edit form - resets category (the
+  // old category likely doesn't belong to the new department) and refetches.
+  const handleEditDeptChange = async (deptId: string) => {
+    setEditForm((f) => ({ ...f, departmentId: deptId, categoryId: "", subDepartmentId: "" }));
+    setEditDeptCategories([]);
+    setEditDeptSubDepartments([]);
+    if (!deptId) return;
+    try {
+      const [catRes, subDeptRes] = await Promise.all([
+        fetch(`http://localhost:3000/departments/${deptId}/categories`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch(`http://localhost:3000/departments/${deptId}/subdepartments`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+      if (catRes.ok) setEditDeptCategories(await catRes.json());
+      if (subDeptRes.ok) setEditDeptSubDepartments(await subDeptRes.json());
+    } catch (err) {}
+  };
+
+  // Handles sub-department switch inside the edit form - re-scopes the
+  // category list, same as the New Ticket form.
+  const handleEditSubDepartmentChange = async (subDepartmentId: string) => {
+    setEditForm((f) => ({ ...f, subDepartmentId, categoryId: "" }));
+    if (!editForm.departmentId) return;
+    try {
+      const url = subDepartmentId
+        ? `http://localhost:3000/departments/${editForm.departmentId}/categories?subDepartmentId=${subDepartmentId}`
+        : `http://localhost:3000/departments/${editForm.departmentId}/categories`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setEditDeptCategories(await res.json());
+    } catch (err) {}
   };
 
   // Action: Save ticket edits (GLOBAL_ADMIN only)
@@ -450,13 +515,15 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
         body: JSON.stringify({
           title: editForm.title.trim(),
           description: editForm.description,
+          departmentId: editForm.departmentId,
+          categoryId: editForm.categoryId || null,
           clientName: editForm.clientName.trim(),
           clientEmail: editForm.clientEmail.trim(),
-          representative: editForm.representative,
-          employeeId: editForm.employeeId,
+          projectId: editForm.projectId || null,
+          designation: editForm.designation || null,
           site: editForm.site.trim(),
           state: editForm.state,
-          ...(editForm.dateOfOccurance ? { dateOfOccurance: editForm.dateOfOccurance } : {})
+          ...(editForm.dateOfOccurance ? { dateOfOccurance: new Date(editForm.dateOfOccurance).toISOString() } : {})
         })
       });
       const data = await res.json();
@@ -748,7 +815,9 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
         </div>
       )}
 
-      {/* Edit Ticket Dialog - GLOBAL_ADMIN only, full field edit */}
+      {/* Edit Ticket Dialog - GLOBAL_ADMIN only. Mirrors the New Ticket
+          form's field set (department/category/client/project/designation
+          etc.) minus representative & employee ID, which aren't edited here. */}
       {showEditForm && isAdmin && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
@@ -764,38 +833,89 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
               </button>
             </div>
             <form onSubmit={handleEditSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">Title</label>
-                <input
-                  type="text"
-                  value={editForm.title}
-                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                  className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">Description</label>
-                <textarea
-                  value={editForm.description}
-                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                  className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white"
-                  rows={4}
-                />
-              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Client Name</label>
-                  <input
-                    type="text"
-                    value={editForm.clientName}
-                    onChange={(e) => setEditForm({ ...editForm, clientName: e.target.value })}
-                    className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white"
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Department *</label>
+                  <select
+                    value={editForm.departmentId}
+                    onChange={(e) => handleEditDeptChange(e.target.value)}
+                    className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white cursor-pointer"
                     required
-                  />
+                  >
+                    <option value="">-- Select Department --</option>
+                    {departments.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {editForm.departmentId && editDeptSubDepartments.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-700 mb-1">Sub-Department</label>
+                    <select
+                      value={editForm.subDepartmentId}
+                      onChange={(e) => handleEditSubDepartmentChange(e.target.value)}
+                      className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white cursor-pointer"
+                    >
+                      <option value="">-- All / Not applicable --</option>
+                      {editDeptSubDepartments.map(sd => (
+                        <option key={sd.id} value={sd.id}>{sd.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-700 mb-1">Ticket Category</label>
+                <select
+                  value={editForm.categoryId}
+                  onChange={(e) => setEditForm({ ...editForm, categoryId: e.target.value })}
+                  className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white cursor-pointer disabled:bg-slate-50 disabled:cursor-not-allowed"
+                  disabled={!editForm.departmentId}
+                >
+                  <option value="">-- Select Category --</option>
+                  {editDeptCategories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Client Business/Company *</label>
+                  <select
+                    value={editForm.clientName}
+                    onChange={(e) => setEditForm({ ...editForm, clientName: e.target.value, projectId: "" })}
+                    className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white cursor-pointer"
+                    required
+                  >
+                    <option value="">-- Choose Client --</option>
+                    {Array.isArray(clients) && clients.map(c => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Client Email</label>
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Project</label>
+                  <select
+                    value={editForm.projectId}
+                    onChange={(e) => setEditForm({ ...editForm, projectId: e.target.value })}
+                    className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white cursor-pointer disabled:bg-slate-50 disabled:cursor-not-allowed"
+                    disabled={!editForm.clientName}
+                  >
+                    <option value="">-- Choose Project --</option>
+                    {Array.isArray(clients) && clients
+                      .find(c => c.name === editForm.clientName)?.projects?.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}{p.isShutdownJob ? " (Shutdown Job)" : ""}</option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Client Authorized Email *</label>
                   <input
                     type="email"
                     value={editForm.clientEmail}
@@ -804,30 +924,36 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                     required
                   />
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Representative</label>
-                  <input
-                    type="text"
-                    value={editForm.representative}
-                    onChange={(e) => setEditForm({ ...editForm, representative: e.target.value })}
-                    className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Employee ID</label>
-                  <input
-                    type="text"
-                    value={editForm.employeeId}
-                    onChange={(e) => setEditForm({ ...editForm, employeeId: e.target.value })}
-                    className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white"
-                  />
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Requester Designation</label>
+                  <select
+                    value={editForm.designation}
+                    onChange={(e) => setEditForm({ ...editForm, designation: e.target.value })}
+                    className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white cursor-pointer"
+                  >
+                    <option value="">-- Choose Designation --</option>
+                    <option value="CEO">CEO</option>
+                    <option value="COO">COO</option>
+                    <option value="CXO">CXO</option>
+                    <option value="HOD">HOD</option>
+                    <option value="EMPLOYEE">EMPLOYEE</option>
+                  </select>
                 </div>
               </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-700 mb-1">Issue Occurred (Date & Time)</label>
+                <input
+                  type="datetime-local"
+                  value={editForm.dateOfOccurance}
+                  onChange={(e) => setEditForm({ ...editForm, dateOfOccurance: e.target.value })}
+                  className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Site / Location</label>
+                  <label className="block text-xs font-semibold text-zinc-700 mb-1">Site / Physical Location *</label>
                   <input
                     type="text"
                     value={editForm.site}
@@ -838,23 +964,73 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-zinc-700 mb-1">State</label>
-                  <input
-                    type="text"
+                  <select
                     value={editForm.state}
                     onChange={(e) => setEditForm({ ...editForm, state: e.target.value })}
-                    className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white"
-                  />
+                    className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white cursor-pointer"
+                  >
+                    <option value="">-- Choose Indian State --</option>
+                    <option value="Andhra Pradesh">Andhra Pradesh</option>
+                    <option value="Arunachal Pradesh">Arunachal Pradesh</option>
+                    <option value="Assam">Assam</option>
+                    <option value="Bihar">Bihar</option>
+                    <option value="Chhattisgarh">Chhattisgarh</option>
+                    <option value="Goa">Goa</option>
+                    <option value="Gujarat">Gujarat</option>
+                    <option value="Haryana">Haryana</option>
+                    <option value="Himachal Pradesh">Himachal Pradesh</option>
+                    <option value="Jharkhand">Jharkhand</option>
+                    <option value="Karnataka">Karnataka</option>
+                    <option value="Kerala">Kerala</option>
+                    <option value="Madhya Pradesh">Madhya Pradesh</option>
+                    <option value="Maharashtra">Maharashtra</option>
+                    <option value="Manipur">Manipur</option>
+                    <option value="Meghalaya">Meghalaya</option>
+                    <option value="Mizoram">Mizoram</option>
+                    <option value="Nagaland">Nagaland</option>
+                    <option value="Odisha">Odisha</option>
+                    <option value="Punjab">Punjab</option>
+                    <option value="Rajasthan">Rajasthan</option>
+                    <option value="Sikkim">Sikkim</option>
+                    <option value="Tamil Nadu">Tamil Nadu</option>
+                    <option value="Telangana">Telangana</option>
+                    <option value="Tripura">Tripura</option>
+                    <option value="Uttar Pradesh">Uttar Pradesh</option>
+                    <option value="Uttarakhand">Uttarakhand</option>
+                    <option value="West Bengal">West Bengal</option>
+                    <option value="Andaman and Nicobar Islands">Andaman & Nicobar Islands</option>
+                    <option value="Chandigarh">Chandigarh</option>
+                    <option value="Dadra and Nagar Haveli and Daman and Diu">Dadra & Nagar Haveli & Daman & Diu</option>
+                    <option value="Delhi">Delhi</option>
+                    <option value="Jammu and Kashmir">Jammu & Kashmir</option>
+                    <option value="Ladakh">Ladakh</option>
+                    <option value="Lakshadweep">Lakshadweep</option>
+                    <option value="Puducherry">Puducherry</option>
+                  </select>
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-zinc-700 mb-1">Date of Occurrence</label>
+
+              <div className="border-t border-zinc-100 pt-4">
+                <label className="block text-xs font-semibold text-zinc-700 mb-1">Ticket Subject / Title *</label>
                 <input
-                  type="date"
-                  value={editForm.dateOfOccurance}
-                  onChange={(e) => setEditForm({ ...editForm, dateOfOccurance: e.target.value })}
-                  className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white"
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white font-semibold"
+                  required
                 />
               </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-zinc-700 mb-1">Detailed Outage Narrative / Description</label>
+                <textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  className="w-full text-sm p-2.5 border border-zinc-200 rounded-lg bg-white"
+                  rows={4}
+                />
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
