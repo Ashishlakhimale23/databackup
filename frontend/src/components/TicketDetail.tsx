@@ -706,8 +706,8 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                       : ticket.internalPriority === "HIGH"
                         ? "bg-amber-50 text-amber-800 border-amber-200"
                         : ticket.internalPriority === "MEDIUM"
-                          ? "bg-slate-100 text-slate-800 border-slate-200"
-                          : "bg-slate-50 text-slate-800 border-slate-200"
+                          ? "bg-slate-100 text-yellow-400 border-yellow-200"
+                          : "bg-green-50 text-green-800 border-slate-200"
                   }`}
                 >
                   Internal Priority: {ticket.internalPriority}

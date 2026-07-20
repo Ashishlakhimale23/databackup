@@ -120,6 +120,7 @@ export const ticketService = {
       clientEmail,
       dateOfOccurance: new Date(dateOfOccurance),
       site,
+      state,
       designation,
       projectId,
       priority,
@@ -174,3 +175,4 @@ export const ticketService = {
     return ticket;
   },
 };
+

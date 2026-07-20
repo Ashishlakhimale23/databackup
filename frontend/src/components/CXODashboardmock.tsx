@@ -63,8 +63,11 @@ interface Ticket {
   turnoverHours: number;
   // Captured only at ticket-raise time — never a full master list.
   // Sourced from Ticket.site (the free-text location field on the intake
-  // form) — the schema has no separate per-ticket "state" column.
+  // form).
   site: string;
+  // The Indian state chosen on the ticket intake form (Ticket.state) —
+  // distinct from the free-text `site` field above.
+  state: string;
   clientName: string;
 }
 
@@ -91,6 +94,7 @@ interface RawTicket {
   slaBreached: boolean;
   turnOverTime: number | null; // seconds, only meaningful once resolved
   site: string | null;
+  state: string | null;
   clientName: string;
 }
 
@@ -122,6 +126,7 @@ function parseTicket(raw: RawTicket): Ticket {
     slaBreached: raw.slaBreached,
     turnoverHours,
     site: raw.site || "Unspecified",
+    state: raw.state || "Unspecified",
     clientName: raw.clientName,
   };
 }
@@ -673,7 +678,7 @@ export default function ManagerAnalyticsMock({ token, apiFetch }: ManagerAnalyti
   );
 
   const availableStates = useMemo(
-    () => Array.from(new Set(deptScopedTickets.map(t => t.site))).sort().map(s => ({ id: s, label: s })),
+    () => Array.from(new Set(deptScopedTickets.map(t => t.state))).sort().map(s => ({ id: s, label: s })),
     [deptScopedTickets]
   );
   const availableClients = useMemo(
@@ -697,7 +702,7 @@ export default function ManagerAnalyticsMock({ token, apiFetch }: ManagerAnalyti
     return ALL_TICKETS.filter(t =>
       (selectedDeptIds.length === 0 || selectedDeptIds.includes(t.departmentId)) &&
       (selectedStatuses.length === 0 || selectedStatuses.includes(t.status)) &&
-      (selectedStates.length === 0 || selectedStates.includes(t.site)) &&
+      (selectedStates.length === 0 || selectedStates.includes(t.state)) &&
       (selectedClients.length === 0 || selectedClients.includes(t.clientName)) &&
       inRange(t.createdAt, rangeStart, rangeEnd)
     );
@@ -741,7 +746,7 @@ export default function ManagerAnalyticsMock({ token, apiFetch }: ManagerAnalyti
 
   const stateDistribution = useMemo(
     () => availableStates
-      .map(s => ({ name: s.id, count: TICKETS.filter(t => t.site === s.id).length }))
+      .map(s => ({ name: s.id, count: TICKETS.filter(t => t.state === s.id).length }))
       .filter(s => s.count > 0)
       .sort((a, b) => b.count - a.count)
       .slice(0, 10),
@@ -942,7 +947,7 @@ export default function ManagerAnalyticsMock({ token, apiFetch }: ManagerAnalyti
 
           {/* State + client volume */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <SectionCard title="Tickets by site" subtitle="Only sites actually captured on raised tickets, top 10 shown">
+            <SectionCard title="Amount of tickets by state" subtitle="Only states actually captured on raised tickets, top 10 shown">
               {stateDistribution.length === 0 ? (
                 <p className="text-sm py-8 text-center" style={{ color: C.neutral400 }}>No tickets match the current filters</p>
               ) : (

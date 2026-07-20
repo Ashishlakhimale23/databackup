@@ -1,7 +1,7 @@
 import { Response } from "express";
 import { AuthedRequest } from "../middleware/auth";
 import { prisma } from "../lib/database";
-import { TicketStatus } from "../generated/prisma/enums";
+import { TicketStatus, UserRole } from "../generated/prisma/enums";
 import { AppError } from "../middleware/errorHandler";
 
 export const userController = {
@@ -102,6 +102,7 @@ export const userController = {
   async list(req: AuthedRequest, res: Response) {
     const users = await prisma.user.findMany({
       where: {
+        role : {notIn : [UserRole.REQUESTER]}
       },
       select: {
         id: true, fullName: true, email: true, role: true, 

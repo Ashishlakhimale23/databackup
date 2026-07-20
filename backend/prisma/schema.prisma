@@ -403,6 +403,9 @@ model Ticket {
   clientEmail       String
   dateOfOccurance  DateTime
   site             String
+  // NOTE(added): the Indian state chosen on the ticket intake form -
+  // captured separately from `site` (the free-text location field).
+  state            String?
   turnoverRate     Float? 
 
   // NOTE(added): requester's designation at the client organization, and the
@@ -620,6 +623,7 @@ model AdminMessage {
 
   @@index([userId, createdAt])
 }
+
 
 
 

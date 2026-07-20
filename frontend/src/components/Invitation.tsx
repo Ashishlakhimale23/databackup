@@ -634,7 +634,7 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
                       <FileUp size={16} className="text-zinc-500 mt-0.5" />
                       <span>
                         <span className="block text-xs font-semibold text-zinc-900">Bulk upload &amp; invite</span>
-                        <span className="block text-[11px] text-zinc-500">Sends a {inviteRole} invite to every row</span>
+                        <span className="block text-[11px] text-zinc-500">Sends a {inviteRole == UserRole.REQUESTER ? "USER" : inviteRole} invite to every row</span>
                       </span>
                     </button>
                   </div>

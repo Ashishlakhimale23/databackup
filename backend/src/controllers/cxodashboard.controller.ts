@@ -65,6 +65,7 @@ export const cxoDashboardController = {
           slaBreached: true,
           turnOverTime: true, // seconds — see computeTurnOverTimeSeconds
           site: true,
+          state: true,
           clientName: true,
         },
         orderBy: { createdAt: "desc" },
@@ -907,3 +908,4 @@ export const cxoDashboardController = {
     });
   },
 }
+
