@@ -1,7 +1,11 @@
 import { Request } from "express";
 
 const DEFAULT_LIMIT = 25;
-const MAX_LIMIT = 100;
+// NOTE(changed): was 100. The HOD/CXO "All Department Tickets" search (see
+// ManagerDashboard/CxoDashboard + AdvancedTicketFilters) pulls a whole
+// department's ticket set in one request so it can be filtered client-side,
+// so the cap needs enough headroom for a busy department.
+const MAX_LIMIT = 500;
 
 export interface Pagination {
   page: number;
