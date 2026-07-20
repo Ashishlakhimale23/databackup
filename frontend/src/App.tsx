@@ -66,6 +66,8 @@ import { InvitationComponent } from "./components/Invitation";
 import { Dashboard } from "./components/Dashboard";
 import TicketsTable from "./components/TicketsTable"
 import ManagerDashboard from "./components/ManagerDashboard"
+import GlobalAdminTicketSearch from "./components/GlobalAdminTicketSearch"
+import AgentTicketSearch from "./components/AgentTicketSearch"
 import AgentDashboard from "./components/AgentDashboardmock";
 import DepartmentDashboard from "./components/HODDashboardmock";
 import CXODashboardMock from "./components/CXODashboardmock";
@@ -1387,6 +1389,20 @@ export default function App() {
               <span>Service Dashboard</span>
             </button>
 
+            {isGlobalAdmin && (
+              <button
+                onClick={() => setCurrentView(PAGES.GLOBAL_TICKET_SEARCH)}
+                className={`w-full text-left px-5 py-2.5 flex items-center gap-3 cursor-pointer ${
+                  currentView === PAGES.GLOBAL_TICKET_SEARCH
+                    ? "bg-slate-100 text-slate-900 border-l-4 border-slate-900 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900 text-slate-500 transition-colors"
+                }`}
+              >
+                <Search size={15} />
+                <span>All Tickets</span>
+              </button>
+            )}
+
             {isManager ? (
               <button
                 onClick={() => setCurrentView(PAGES.HOD_DASHBOARD)}
@@ -1511,6 +1527,21 @@ export default function App() {
             {
               isAgent && (
               <button
+                onClick={() => setCurrentView(PAGES.AGENT_TICKET_SEARCH)}
+                className={`w-full text-left px-5 py-2.5 flex items-center gap-3 cursor-pointer ${
+                  currentView === PAGES.AGENT_TICKET_SEARCH
+                    ? "bg-slate-100 text-slate-900 border-l-4 border-slate-900 font-semibold"
+                    : "hover:bg-slate-50 hover:text-slate-900 text-slate-500 transition-colors"
+                }`}
+              >
+                <Search size={15} />
+                <span>My Tickets Search</span>
+              </button>
+            )}
+
+            {
+              isAgent && (
+              <button
                 onClick={() => {
                   setCurrentView(PAGES.AGENT_ANALYTICS);
                   setSelectedDeptId("");
@@ -1605,6 +1636,26 @@ export default function App() {
               user={user!}
               setSelectedTicketId={setSelectedTicketId}
               metric={metric!}
+            />
+          )}
+
+          {/* VIEW: GLOBAL ADMIN - company-wide ticket search */}
+          {currentView === PAGES.GLOBAL_TICKET_SEARCH && isGlobalAdmin && (
+            <GlobalAdminTicketSearch
+              token={token}
+              currentUser={user!}
+              setSelectedTicketId={setSelectedTicketId}
+              setCurrentView={setCurrentView}
+            />
+          )}
+
+          {/* VIEW: AGENT - own/assigned ticket search */}
+          {currentView === PAGES.AGENT_TICKET_SEARCH && isAgent && (
+            <AgentTicketSearch
+              token={token}
+              currentUser={user!}
+              setSelectedTicketId={setSelectedTicketId}
+              setCurrentView={setCurrentView}
             />
           )}
 
@@ -2675,5 +2726,6 @@ export default function App() {
     </div>
   );
 }
+
 
 
