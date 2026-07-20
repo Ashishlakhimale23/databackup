@@ -31,7 +31,9 @@ import {
   RefreshCw,
   Eye,
   Trash,
-  Ticket
+  Ticket,
+  Upload,
+  Download
 } from "lucide-react";
 
 import {
@@ -50,6 +52,7 @@ import {
   TicketPriority,
   SupportLevel,
   DepartmentSuggestions,
+  DepartmentBulkUploadResult,
   PAGES,
   metric
 } from "./types";
@@ -141,6 +144,12 @@ export default function App() {
   const [showAddDeptDialog, setShowAddDeptDialog] = useState(false);
   const [newDeptName, setNewDeptName] = useState("");
   const [newDeptDescription, setNewDeptDescription] = useState("");
+
+  // Bulk Upload Departments Dialog state
+  const [showBulkUploadDeptDialog, setShowBulkUploadDeptDialog] = useState(false);
+  const [bulkDeptFile, setBulkDeptFile] = useState<File | null>(null);
+  const [bulkDeptUploading, setBulkDeptUploading] = useState(false);
+  const [bulkDeptResult, setBulkDeptResult] = useState<DepartmentBulkUploadResult | null>(null);
 
   // Department Config state
   const [selectedDeptId, setSelectedDeptId] = useState<string>("");
@@ -701,6 +710,54 @@ export default function App() {
       setSuccess("Department created.");
     } catch (err: any) {
       setError(err.message || "Failed to create department");
+    }
+  };
+
+  // Download the .xlsx template admins fill in for bulk department upload
+  const handleDownloadDeptTemplate = async () => {
+    try {
+      const res = await fetch("http://localhost:3000/departments/bulk-upload/template", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("Failed to download template");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "department_bulk_upload_template.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err.message || "Failed to download template");
+    }
+  };
+
+  // Bulk Upload Departments - sends the selected .xlsx/.xls to the backend
+  // and shows a per-row created/skipped/error summary.
+  const handleBulkUploadDepartments = async () => {
+    if (!bulkDeptFile) return;
+    setBulkDeptUploading(true);
+    setBulkDeptResult(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", bulkDeptFile);
+      const res = await fetch("http://localhost:3000/departments/bulk-upload", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to upload departments");
+
+      setBulkDeptResult(data);
+      fetchDepartments();
+      setSuccess(`Bulk upload complete: ${data.createdCount} department(s) created.`);
+    } catch (err: any) {
+      setError(err.message || "Failed to upload departments");
+    } finally {
+      setBulkDeptUploading(false);
     }
   };
 
@@ -1792,13 +1849,123 @@ export default function App() {
                     Configure service parameters, categories, and tags.
                   </p>
                 </div>
-                <button
-                  onClick={() => setShowAddDeptDialog(true)}
-                  className="bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold px-4 py-2.5 cursor-pointer flex items-center gap-2 rounded-lg transition-all"
-                >
-                  <Plus size={16} /> Add Department
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setBulkDeptFile(null);
+                      setBulkDeptResult(null);
+                      setShowBulkUploadDeptDialog(true);
+                    }}
+                    className="bg-white border border-zinc-300 hover:bg-zinc-50 text-zinc-800 text-xs font-semibold px-4 py-2.5 cursor-pointer flex items-center gap-2 rounded-lg transition-all"
+                  >
+                    <Upload size={16} /> Bulk Upload
+                  </button>
+                  <button
+                    onClick={() => setShowAddDeptDialog(true)}
+                    className="bg-zinc-900 hover:bg-zinc-800 text-white text-xs font-semibold px-4 py-2.5 cursor-pointer flex items-center gap-2 rounded-lg transition-all"
+                  >
+                    <Plus size={16} /> Add Department
+                  </button>
+                </div>
               </div>
+
+              {/* Bulk Upload Departments Dialog */}
+              {showBulkUploadDeptDialog && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <h2 className="text-lg font-bold text-zinc-900">
+                        Bulk Upload Departments
+                      </h2>
+                      <button
+                        onClick={() => setShowBulkUploadDeptDialog(false)}
+                        className="text-zinc-400 hover:text-zinc-700 text-xl leading-none cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-zinc-500 mb-4">
+                      Upload an .xlsx or .xls file with a "name" and optional
+                      "description" column - one row per department.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={handleDownloadDeptTemplate}
+                      className="w-full mb-4 text-xs font-semibold text-zinc-700 border border-dashed border-zinc-300 hover:bg-zinc-50 rounded-lg px-4 py-2.5 cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <Download size={14} /> Download Template
+                    </button>
+
+                    <div className="mb-4">
+                      <label className="block text-xs font-semibold text-zinc-700 mb-1">
+                        Select File
+                      </label>
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={(e) => setBulkDeptFile(e.target.files?.[0] || null)}
+                        className="w-full text-sm p-2 border border-zinc-200 rounded-lg bg-white"
+                      />
+                    </div>
+
+                    {bulkDeptResult && (
+                      <div className="mb-4 text-xs bg-zinc-50 border border-zinc-200 rounded-lg p-3 space-y-2 max-h-52 overflow-y-auto">
+                        <div className="flex gap-4 font-mono">
+                          <span className="text-emerald-600 font-bold">
+                            Created: {bulkDeptResult.createdCount}
+                          </span>
+                          <span className="text-amber-600 font-bold">
+                            Skipped: {bulkDeptResult.skippedCount}
+                          </span>
+                          <span className="text-red-600 font-bold">
+                            Errors: {bulkDeptResult.errorCount}
+                          </span>
+                        </div>
+                        {bulkDeptResult.skipped.length > 0 && (
+                          <div>
+                            <p className="font-semibold text-zinc-600">Skipped rows:</p>
+                            {bulkDeptResult.skipped.map((s, i) => (
+                              <p key={i} className="text-zinc-500">
+                                Row {s.row} ({s.name}): {s.reason}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                        {bulkDeptResult.errors.length > 0 && (
+                          <div>
+                            <p className="font-semibold text-zinc-600">Row errors:</p>
+                            {bulkDeptResult.errors.map((e, i) => (
+                              <p key={i} className="text-red-500">
+                                Row {e.row}: {e.reason}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowBulkUploadDeptDialog(false)}
+                        className="text-xs font-semibold text-zinc-500 hover:text-zinc-800 px-4 py-2.5 cursor-pointer"
+                      >
+                        Close
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!bulkDeptFile || bulkDeptUploading}
+                        onClick={handleBulkUploadDepartments}
+                        className="bg-zinc-900 hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold px-4 py-2.5 rounded-lg cursor-pointer"
+                      >
+                        {bulkDeptUploading ? "Uploading..." : "Upload"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Add Department Dialog */}
               {showAddDeptDialog && (
@@ -2442,3 +2609,4 @@ export default function App() {
     </div>
   );
 }
+

@@ -128,6 +128,22 @@ export interface DepartmentSuggestions {
   name : string
 }
 
+export interface DepartmentBulkUploadRowIssue {
+  row: number;
+  name?: string;
+  reason: string;
+}
+
+export interface DepartmentBulkUploadResult {
+  totalRows: number;
+  createdCount: number;
+  skippedCount: number;
+  errorCount: number;
+  departments: Department[];
+  skipped: DepartmentBulkUploadRowIssue[];
+  errors: DepartmentBulkUploadRowIssue[];
+}
+
 export interface SubDepartment {
   id: string;
   departmentId: string;
@@ -379,3 +395,4 @@ export const ROLES = {
   REQUESTER : "REQUESTER",
   CXO : "CXO"
 }
+

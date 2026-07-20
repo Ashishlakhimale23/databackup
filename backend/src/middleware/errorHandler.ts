@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { Prisma } from "../generated/prisma/client";
 import { ZodError } from "zod";
+import { MulterError } from "multer";
 import { InvitationError } from "../services/invitation.service";
 
 /** Throw this from a controller/service for any expected, client-facing error. */
@@ -38,6 +39,14 @@ export function errorHandler(err: unknown, req: Request, res: Response, next: Ne
       error: "Validation failed",
       details: err.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
     });
+  }
+
+  // Covers file-upload failures like size-limit or unexpected-field errors
+  // from multer (used for the departments bulk-upload endpoint).
+  if (err instanceof MulterError) {
+    const message =
+      err.code === "LIMIT_FILE_SIZE" ? "File exceeds the maximum upload size" : err.message;
+    return res.status(400).json({ error: message });
   }
 
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
