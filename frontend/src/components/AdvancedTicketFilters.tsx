@@ -1,17 +1,45 @@
 // /home/workdir/artifacts/CustomerPulse-main/frontend/src/components/AdvancedTicketFilters.tsx
+//
+// Key/value filter search engine for tickets.
+//
+// "Keys" are the fields a person can filter on (status, category,
+// department, client, project, state, internal priority, date of
+// occurrence, SLA deadline, a custom date range, ...). "Values" are
+// whatever actually shows up in the tickets this person has access to -
+// dropdowns are always derived from the `tickets` prop itself, never from
+// a global master list, so a HOD/CXO only ever sees the departments,
+// categories, clients, projects, and states that appear in tickets they
+// can already see (their assigned department(s) + their own tickets).
+//
+// Role access this filter enforces client-side (mirrors the backend
+// GET /tickets scoping in ticket.controller.ts):
+//   - GLOBAL_ADMIN: everything.
+//   - CXO / HOD: identical access - tickets in their assigned department(s),
+//     plus tickets they personally raised.
+//   - AGENT: only tickets assigned to them, or raised by them.
 import React, { useState, useMemo, useEffect } from "react";
-import { Ticket, TicketStatus, TicketPriority, Department, TicketCategory, UserRole } from "../types";
-import { Filter, X, Calendar } from "lucide-react";
+import { Ticket, TicketStatus, TicketPriority, InternalPriorityLevel, UserRole } from "../types";
+import { Filter, X } from "lucide-react";
+
+// Loosened on purpose: callers (ManagerDashboard/CxoDashboard) only ever
+// have the {id, name} shape available for departments/categories in scope,
+// not the full master-list Department/TicketCategory records.
+export interface FilterOption {
+  id: string;
+  name: string;
+}
 
 interface AdvancedTicketFiltersProps {
   tickets: Ticket[];
-  departments: Department[];
-  categories: TicketCategory[];
+  departments: FilterOption[];
+  categories: FilterOption[];
   onFilteredTicketsChange: (filtered: Ticket[]) => void;
-  userRole: UserRole;
+  userRole: UserRole | string;
   userDepartmentIds?: string[];
-  userId?: string; // for AGENT own/assigned scoping
+  userId?: string; // for AGENT own/assigned scoping, and HOD/CXO "my own tickets"
 }
+
+const DEPARTMENT_SCOPED_ROLES: string[] = [UserRole.HOD, UserRole.CXO];
 
 export const AdvancedTicketFilters: React.FC<AdvancedTicketFiltersProps> = ({
   tickets,
@@ -25,67 +53,173 @@ export const AdvancedTicketFilters: React.FC<AdvancedTicketFiltersProps> = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<TicketStatus | "">("");
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | "">("");
+  const [internalPriorityFilter, setInternalPriorityFilter] = useState<InternalPriorityLevel | "">("");
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [clientFilter, setClientFilter] = useState("");
+  const [projectFilter, setProjectFilter] = useState("");
+  const [stateFilter, setStateFilter] = useState("");
   const [slaBreachedFilter, setSlaBreachedFilter] = useState(false);
 
-  // Dynamic options
-  const availableStatuses = useMemo(() => [...new Set(tickets.map(t => t.status))].sort(), [tickets]);
-  const availablePriorities = useMemo(() => [...new Set(tickets.map(t => t.priority))].sort(), [tickets]);
-  const availableDepartments = useMemo(() => {
-    const deptIds = new Set(tickets.map(t => t.departmentId));
-    return departments.filter(d => deptIds.has(d.id));
-  }, [tickets, departments]);
-  const availableCategories = useMemo(() => {
-    const catIds = new Set(tickets.map(t => t.categoryId).filter(Boolean));
-    return categories.filter(c => catIds.has(c.id));
-  }, [tickets, categories]);
+  // Custom date filter (ticket filed/created date)
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  // Date of occurrence range
+  const [occurredFrom, setOccurredFrom] = useState("");
+  const [occurredTo, setOccurredTo] = useState("");
+  // SLA deadline range
+  const [slaFrom, setSlaFrom] = useState("");
+  const [slaTo, setSlaTo] = useState("");
 
-  // Core filtering (role-aware)
+  // Tickets this role is actually allowed to see, BEFORE any filter picks
+  // are applied - this is also what every dropdown's option list is
+  // derived from, so a person never sees a value (department, client, ...)
+  // that doesn't appear in a ticket they have access to.
+  const scopedTickets = useMemo(() => {
+    if (userRole === UserRole.GLOBAL_ADMIN) return tickets;
+    if (DEPARTMENT_SCOPED_ROLES.includes(userRole as string)) {
+      return tickets.filter(
+        (t) => userDepartmentIds.includes(t.departmentId || "") || t.requesterId === userId
+      );
+    }
+    if (userRole === UserRole.AGENT) {
+      return tickets.filter((t) => t.assigneeId === userId || t.requesterId === userId);
+    }
+    return tickets;
+  }, [tickets, userRole, userDepartmentIds, userId]);
+
+  // Dynamic options - only values present in tickets this person can see.
+  const availableStatuses = useMemo(
+    () => [...new Set(scopedTickets.map((t) => t.status))].sort(),
+    [scopedTickets]
+  );
+  const availablePriorities = useMemo(
+    () => [...new Set(scopedTickets.map((t) => t.priority))].sort(),
+    [scopedTickets]
+  );
+  const availableInternalPriorities = useMemo(
+    () => [...new Set(scopedTickets.map((t) => t.internalPriority).filter(Boolean))].sort(),
+    [scopedTickets]
+  );
+  const availableDepartments = useMemo(() => {
+    const deptIds = new Set(scopedTickets.map((t) => t.departmentId));
+    return departments.filter((d) => deptIds.has(d.id));
+  }, [scopedTickets, departments]);
+  const availableCategories = useMemo(() => {
+    const catIds = new Set(scopedTickets.map((t) => t.categoryId).filter(Boolean));
+    return categories.filter((c) => catIds.has(c.id));
+  }, [scopedTickets, categories]);
+  const availableClients = useMemo(
+    () => [...new Set(scopedTickets.map((t) => t.clientName).filter(Boolean))].sort(),
+    [scopedTickets]
+  );
+  const availableProjects = useMemo(() => {
+    const map = new Map<string, string>();
+    scopedTickets.forEach((t) => {
+      if (t.projectId && t.project?.name) map.set(t.projectId, t.project.name);
+    });
+    return [...map.entries()].map(([id, name]) => ({ id, name }));
+  }, [scopedTickets]);
+  const availableStates = useMemo(
+    () => [...new Set(scopedTickets.map((t) => t.state).filter(Boolean))].sort(),
+    [scopedTickets]
+  );
+
+  // Core filtering (role-aware scope + every key/value filter above it)
   const filteredTickets = useMemo(() => {
-    return tickets.filter(ticket => {
-      // Text search
-      const matchesSearch = !searchTerm || 
-        [ticket.title, ticket.description, ticket.ticketNumber, ticket.clientName]
-          .some(field => field?.toLowerCase().includes(searchTerm.toLowerCase()));
+    return scopedTickets.filter((ticket) => {
+      const matchesSearch =
+        !searchTerm ||
+        [ticket.title, ticket.description, ticket.ticketNumber, ticket.clientName].some((field) =>
+          field?.toLowerCase().includes(searchTerm.toLowerCase())
+        );
 
       const matchesStatus = !statusFilter || ticket.status === statusFilter;
       const matchesPriority = !priorityFilter || ticket.priority === priorityFilter;
+      const matchesInternalPriority = !internalPriorityFilter || ticket.internalPriority === internalPriorityFilter;
       const matchesCategory = !categoryFilter || ticket.categoryId === categoryFilter;
-
-      // Department + Role scoping
-      let matchesDept = true;
-      if (departmentFilter) {
-        matchesDept = ticket.departmentId === departmentFilter;
-      } else if (["HOD", "CXO"].includes(userRole)) {
-        matchesDept = userDepartmentIds.includes(ticket.departmentId || "");
-      } else if (userRole === "AGENT" && userId) {
-        matchesDept = ticket.assigneeId === userId || ticket.requesterId === userId;
-      }
-
-      // Date
-      const ticketDate = new Date(ticket.createdAt);
-      const matchesDate = (!dateFrom || ticketDate >= new Date(dateFrom)) && 
-                         (!dateTo || ticketDate <= new Date(dateTo + "T23:59:59"));
-
+      const matchesDept = !departmentFilter || ticket.departmentId === departmentFilter;
+      const matchesClient = !clientFilter || ticket.clientName === clientFilter;
+      const matchesProject = !projectFilter || ticket.projectId === projectFilter;
+      const matchesState = !stateFilter || ticket.state === stateFilter;
       const matchesSla = !slaBreachedFilter || !!ticket.slaBreached;
 
-      return matchesSearch && matchesStatus && matchesPriority && matchesDept && 
-             matchesCategory && matchesDate && matchesSla;
+      // Custom date filter - date the ticket was filed.
+      const createdAt = new Date(ticket.createdAt);
+      const matchesCreated =
+        (!dateFrom || createdAt >= new Date(dateFrom)) &&
+        (!dateTo || createdAt <= new Date(dateTo + "T23:59:59"));
+
+      // Date of occurrence range.
+      const occurredAt = ticket.dateOfOccurance ? new Date(ticket.dateOfOccurance) : null;
+      const matchesOccurred =
+        (!occurredFrom || (occurredAt && occurredAt >= new Date(occurredFrom))) &&
+        (!occurredTo || (occurredAt && occurredAt <= new Date(occurredTo + "T23:59:59")));
+
+      // SLA deadline range.
+      const slaDeadline = ticket.slaDeadline ? new Date(ticket.slaDeadline) : null;
+      const matchesSlaDeadline =
+        (!slaFrom || (slaDeadline && slaDeadline >= new Date(slaFrom))) &&
+        (!slaTo || (slaDeadline && slaDeadline <= new Date(slaTo + "T23:59:59")));
+
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesPriority &&
+        matchesInternalPriority &&
+        matchesDept &&
+        matchesCategory &&
+        matchesClient &&
+        matchesProject &&
+        matchesState &&
+        matchesSla &&
+        matchesCreated &&
+        matchesOccurred &&
+        matchesSlaDeadline
+      );
     });
-  }, [tickets, searchTerm, statusFilter, priorityFilter, departmentFilter, categoryFilter, 
-      dateFrom, dateTo, slaBreachedFilter, userRole, userDepartmentIds, userId]);
+  }, [
+    scopedTickets,
+    searchTerm,
+    statusFilter,
+    priorityFilter,
+    internalPriorityFilter,
+    departmentFilter,
+    categoryFilter,
+    clientFilter,
+    projectFilter,
+    stateFilter,
+    slaBreachedFilter,
+    dateFrom,
+    dateTo,
+    occurredFrom,
+    occurredTo,
+    slaFrom,
+    slaTo,
+  ]);
 
   useEffect(() => {
     onFilteredTicketsChange(filteredTickets);
-  }, [filteredTickets, onFilteredTicketsChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredTickets]);
 
   const reset = () => {
-    setSearchTerm(""); setStatusFilter(""); setPriorityFilter(""); 
-    setDepartmentFilter(""); setCategoryFilter(""); setDateFrom(""); 
-    setDateTo(""); setSlaBreachedFilter(false);
+    setSearchTerm("");
+    setStatusFilter("");
+    setPriorityFilter("");
+    setInternalPriorityFilter("");
+    setDepartmentFilter("");
+    setCategoryFilter("");
+    setClientFilter("");
+    setProjectFilter("");
+    setStateFilter("");
+    setSlaBreachedFilter(false);
+    setDateFrom("");
+    setDateTo("");
+    setOccurredFrom("");
+    setOccurredTo("");
+    setSlaFrom("");
+    setSlaTo("");
   };
 
   return (
@@ -93,7 +227,7 @@ export const AdvancedTicketFilters: React.FC<AdvancedTicketFiltersProps> = ({
       <div className="flex justify-between items-center mb-4">
         <div className="flex items-center gap-2 text-slate-700">
           <Filter size={18} />
-          <span className="font-semibold">Advanced Ticket Search & Filters</span>
+          <span className="font-semibold">Advanced Ticket Search &amp; Filters</span>
         </div>
         <button onClick={reset} className="text-xs text-slate-500 hover:text-red-600 flex items-center gap-1">
           <X size={14} /> Clear All
@@ -102,48 +236,108 @@ export const AdvancedTicketFilters: React.FC<AdvancedTicketFiltersProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
         <div className="lg:col-span-2">
-          <input 
-            type="text" placeholder="Search title, #, client..." 
-            value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+          <input
+            type="text"
+            placeholder="Search title, #, client..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:border-indigo-500 focus:ring-1"
           />
         </div>
 
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
           <option value="">All Status</option>
-          {availableStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+          {availableStatuses.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
         </select>
 
-        <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value as any)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
+        <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value as any)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
           <option value="">All Priority</option>
-          {availablePriorities.map(p => <option key={p} value={p}>{p}</option>)}
+          {availablePriorities.map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
         </select>
 
-        <select value={departmentFilter} onChange={e => setDepartmentFilter(e.target.value)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
+        <select value={internalPriorityFilter} onChange={(e) => setInternalPriorityFilter(e.target.value as any)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
+          <option value="">All Internal Priority</option>
+          {availableInternalPriorities.map((p) => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+
+        <select value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
           <option value="">All Depts</option>
-          {availableDepartments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          {availableDepartments.map((d) => (
+            <option key={d.id} value={d.id}>{d.name}</option>
+          ))}
         </select>
 
-        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
           <option value="">All Categories</option>
-          {availableCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          {availableCategories.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
         </select>
 
-        <div>
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl" />
-        </div>
-        <div>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full px-4 py-2.5 border border-slate-200 rounded-xl" />
-        </div>
+        <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
+          <option value="">All Clients</option>
+          {availableClients.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
 
-        <label className="flex items-center gap-2 col-span-full md:col-span-1 pt-2">
-          <input type="checkbox" checked={slaBreachedFilter} onChange={e => setSlaBreachedFilter(e.target.checked)} className="rounded" />
+        <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
+          <option value="">All Projects</option>
+          {availableProjects.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+
+        <select value={stateFilter} onChange={(e) => setStateFilter(e.target.value)} className="px-4 py-2.5 border border-slate-200 rounded-xl bg-white">
+          <option value="">All States</option>
+          {availableStates.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+
+        <label className="flex items-center gap-2 pt-2">
+          <input type="checkbox" checked={slaBreachedFilter} onChange={(e) => setSlaBreachedFilter(e.target.checked)} className="rounded" />
           <span>SLA Breached</span>
         </label>
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm mt-4 pt-4 border-t border-slate-100">
+        <div>
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Custom Date Filter</div>
+          <div className="flex items-center gap-2">
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl" />
+            <span className="text-slate-400 text-xs">to</span>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl" />
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Date of Occurrence</div>
+          <div className="flex items-center gap-2">
+            <input type="date" value={occurredFrom} onChange={(e) => setOccurredFrom(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl" />
+            <span className="text-slate-400 text-xs">to</span>
+            <input type="date" value={occurredTo} onChange={(e) => setOccurredTo(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl" />
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">SLA Deadline</div>
+          <div className="flex items-center gap-2">
+            <input type="date" value={slaFrom} onChange={(e) => setSlaFrom(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl" />
+            <span className="text-slate-400 text-xs">to</span>
+            <input type="date" value={slaTo} onChange={(e) => setSlaTo(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl" />
+          </div>
+        </div>
+      </div>
+
       <div className="mt-3 text-xs text-slate-500">
-        {filteredTickets.length} results • {tickets.length} total
+        {filteredTickets.length} results • {scopedTickets.length} accessible
       </div>
     </div>
   );
