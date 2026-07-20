@@ -165,7 +165,7 @@ export const TicketForm = ({setError,setSuccess,setSelectedTicketId,setCurrentVi
               <div className="bg-white border border-slate-200/80 p-6 rounded-2xl shadow-xs">
                 <h1 className="text-lg font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
                   <FileText className="text-indigo-600" size={20} />
-                  New Service Desk Ticket
+                  New Customer Pulse Ticket
                 </h1>
                 <p className="text-xs text-slate-500 mt-2">
                   Complete corporate details. Priority assignments are computed automatically on routing based on client account definitions and service parameters.

@@ -55,6 +55,7 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
   const [selectedState, setSelectedState] = useState<string>("");
   const [selectedWindCategory, setSelectedWindCategory] = useState<WindCategory | "">("");
   const isExecutiveRole = inviteRole === UserRole.HOD || inviteRole === UserRole.CXO;
+  const isAgentRole = inviteRole === UserRole.AGENT;
 
   // Bulk upload (Excel template download / bulk invite) state - reuses
   // whichever Role/Department/Category/State/WindCategory is currently
@@ -201,29 +202,131 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
   };
 
   // Same field checks as handleSendInvite, reused so a bulk batch can't be
-  // fired off with an incomplete Role/Department/Category selection.
+  // fired off with an incomplete selection. Department is intentionally
+  // NOT checked here for HOD/CXO, and neither Department/Category/State/
+  // WindCategory are checked for AGENT - for those roles each row in the
+  // uploaded file supplies its own values, so there's nothing to
+  // pre-select on the form for bulk.
   const validateCommonFields = (): string | null => {
-    if (inviteRole != UserRole.REQUESTER && !isExecutiveRole && inviteCategoryIds.length <= 0) {
+    if (inviteRole != UserRole.REQUESTER && !isExecutiveRole && !isAgentRole && inviteCategoryIds.length <= 0) {
       return "Select at least a single category";
-    }
-    if (isExecutiveRole && inviteDeptIds.length <= 0) {
-      return "Select at least one department for HOD / CXO";
-    }
-    if (inviteRole == UserRole.AGENT && !selectedWindCategory) {
-      return "Select Wind, Non-Wind, or Both for this agent";
     }
     return null;
   };
 
-  const handleDownloadBulkTemplate = () => {
+  const handleDownloadBulkTemplate = async () => {
     setShowBulkMenu(false);
-    const worksheet = XLSX.utils.aoa_to_sheet([
-      ["Name", "Email"],
-      ["Jane Doe", "jane.doe@example.com"],
-    ]);
-    worksheet["!cols"] = [{ wch: 28 }, { wch: 32 }];
+
+    const header = isExecutiveRole
+      ? ["Name", "Email", "Departments"]
+      : isAgentRole
+      ? ["Name", "Email", "State", "WindCategory", "Department", "Categories"]
+      : ["Name", "Email"];
+
+    const sampleDeptNames = departments.slice(0, 2).map((d) => d.name).join(", ") || "Sales, Finance";
+    const firstDeptName = departments[0]?.name || "Sales";
+
+    const exampleRow = isExecutiveRole
+      ? ["Jane Doe", "jane.doe@example.com", sampleDeptNames]
+      : isAgentRole
+      ? ["Jane Doe", "jane.doe@example.com", STATES[0] || "", "Wind", firstDeptName, "Category A, Category B"]
+      : ["Jane Doe", "jane.doe@example.com"];
+
+    const worksheet = XLSX.utils.aoa_to_sheet([header, exampleRow]);
+    worksheet["!cols"] = isExecutiveRole
+      ? [{ wch: 28 }, { wch: 32 }, { wch: 40 }]
+      : isAgentRole
+      ? [{ wch: 24 }, { wch: 30 }, { wch: 16 }, { wch: 14 }, { wch: 24 }, { wch: 40 }]
+      : [{ wch: 28 }, { wch: 32 }];
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Invitees");
+
+    if (isExecutiveRole) {
+      // Reference sheet so whoever fills the template knows exactly which
+      // department names are valid (matched case-insensitively on upload).
+      const deptRows = departments.length > 0
+        ? departments.map((d) => [d.name])
+        : [["No departments have been created yet"]];
+      const deptSheet = XLSX.utils.aoa_to_sheet([["Valid Department Names"], ...deptRows]);
+      deptSheet["!cols"] = [{ wch: 32 }];
+      XLSX.utils.book_append_sheet(workbook, deptSheet, "Departments");
+
+      const instructionsSheet = XLSX.utils.aoa_to_sheet([
+        ["Instructions"],
+        ["1. Fill in Name, Email, and Departments for each person on the Invitees sheet."],
+        ["2. Departments: one or more names from the 'Departments' sheet, separated by commas"],
+        ["   (e.g. \"Sales, Finance\"). Each " + inviteRole + " will be assigned to all listed departments."],
+        ["3. Department names are matched case-insensitively but must otherwise match exactly."],
+        ["4. Rows with a missing or unrecognized department will be skipped and reported after upload."],
+      ]);
+      instructionsSheet["!cols"] = [{ wch: 90 }];
+      XLSX.utils.book_append_sheet(workbook, instructionsSheet, "Instructions");
+    }
+
+    if (isAgentRole) {
+      const stateSheet = XLSX.utils.aoa_to_sheet([["Valid States"], ...STATES.map((s) => [s])]);
+      stateSheet["!cols"] = [{ wch: 24 }];
+      XLSX.utils.book_append_sheet(workbook, stateSheet, "States");
+
+      const windSheet = XLSX.utils.aoa_to_sheet([["Valid Wind Categories"], ["Wind"], ["Non-Wind"], ["Both"]]);
+      windSheet["!cols"] = [{ wch: 24 }];
+      XLSX.utils.book_append_sheet(workbook, windSheet, "WindCategories");
+
+      // Best-effort reference sheet listing every department's actual
+      // categories, so whoever fills the template knows exactly which
+      // Categories values are valid for the Department they put on that row.
+      const deptCategoryRows: string[][] = [["Department", "Category"]];
+      if (departments.length > 0) {
+        await Promise.all(
+          departments.map(async (d) => {
+            try {
+              const res = await requestFn(`http://localhost:3000/departments/${d.id}/categories`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (res.ok) {
+                const cats: TicketCategory[] = await res.json();
+                if (cats.length === 0) {
+                  deptCategoryRows.push([d.name, "(no categories yet)"]);
+                } else {
+                  cats.forEach((c) => deptCategoryRows.push([d.name, c.name]));
+                }
+              }
+            } catch {
+              // Reference sheet is best-effort; skip this department on network error.
+            }
+          })
+        );
+      } else {
+        deptCategoryRows.push(["No departments have been created yet", ""]);
+      }
+      const deptCatSheet = XLSX.utils.aoa_to_sheet(deptCategoryRows);
+      deptCatSheet["!cols"] = [{ wch: 28 }, { wch: 32 }];
+      XLSX.utils.book_append_sheet(workbook, deptCatSheet, "Departments & Categories");
+
+      const deptSheet = XLSX.utils.aoa_to_sheet([
+        ["Valid Department Names"],
+        ...(departments.length > 0 ? departments.map((d) => [d.name]) : [["No departments have been created yet"]]),
+      ]);
+      deptSheet["!cols"] = [{ wch: 32 }];
+      XLSX.utils.book_append_sheet(workbook, deptSheet, "Departments");
+
+      const instructionsSheet = XLSX.utils.aoa_to_sheet([
+        ["Instructions"],
+        ["1. Fill in Name, Email, State, WindCategory, Department, and Categories for each agent."],
+        ["2. State is optional - leave blank if not applicable. If provided, it must match a name"],
+        ["   from the 'States' sheet."],
+        ["3. WindCategory is required: Wind, Non-Wind, or Both (see the 'WindCategories' sheet)."],
+        ["4. Department is required: one name from the 'Departments' sheet."],
+        ["5. Categories is required: one or more category names valid for that row's Department,"],
+        ["   separated by commas (see 'Departments & Categories' sheet for what's valid per department)."],
+        ["6. All values are matched case-insensitively but must otherwise match exactly."],
+        ["7. Rows with a missing or unrecognized value will be skipped and reported after upload."],
+      ]);
+      instructionsSheet["!cols"] = [{ wch: 95 }];
+      XLSX.utils.book_append_sheet(workbook, instructionsSheet, "Instructions");
+    }
+
     XLSX.writeFile(workbook, `${inviteRole.toLowerCase()}_bulk_invite_template.xlsx`);
   };
 
@@ -258,8 +361,32 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-      // Accept "Name"/"name" and "Email"/"email" header variants.
-      const requestorsPayload = rows
+      // Case-insensitive department-name -> id lookup, shared by the
+      // Departments column (HOD/CXO) and the Department column (AGENT).
+      // Built once from the same `departments` list the form's
+      // checkboxes/dropdown use, so it's always in sync with what's
+      // actually creatable.
+      const deptIdByName = new Map(
+        departments.map((d) => [d.name.trim().toLowerCase(), d.id])
+      );
+      const stateByName = new Map(STATES.map((s) => [s.toLowerCase(), s]));
+      const normalizeWindCategory = (raw: string): WindCategory | null => {
+        const key = raw.trim().toLowerCase().replace(/[\s_-]+/g, "");
+        if (key === "wind") return WindCategory.WIND;
+        if (key === "nonwind") return WindCategory.NON_WIND;
+        if (key === "both") return WindCategory.BOTH;
+        return null;
+      };
+
+      // Rows dropped before ever reaching the server (missing name/email,
+      // or an unrecognized/blank value in a role-specific column). Merged
+      // with the server's own `skipped` list once the request comes back.
+      const parseSkips: { name: string; email: string; reason: string }[] = [];
+
+      // Normalize headers once per row. Accepts "Name"/"name",
+      // "Email"/"email", "Departments"/"Department", "State"/"state",
+      // "WindCategory"/"Wind Category"/"wind", and "Categories"/"Category".
+      const normalizedRows = rows
         .map((row) => {
           const keyMap = Object.keys(row).reduce((acc, k) => {
             acc[k.trim().toLowerCase()] = row[k];
@@ -268,12 +395,148 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
           return {
             name: String(keyMap["name"] ?? "").trim(),
             email: String(keyMap["email"] ?? "").trim(),
+            rawDepartments: String(keyMap["departments"] ?? keyMap["department"] ?? "").trim(),
+            rawState: String(keyMap["state"] ?? "").trim(),
+            rawWindCategory: String(keyMap["windcategory"] ?? keyMap["wind category"] ?? keyMap["wind"] ?? "").trim(),
+            rawCategories: String(keyMap["categories"] ?? keyMap["category"] ?? "").trim(),
           };
         })
-        .filter((r) => r.name || r.email);
+        .filter((r) => r.name || r.email || r.rawDepartments); // drop fully blank rows
+
+      let requestorsPayload: Array<Record<string, any>>;
+
+      if (isAgentRole) {
+        // Each row's Department resolves to a single id (one dept per agent).
+        const rowDeptIds = normalizedRows.map((r) => deptIdByName.get(r.rawDepartments.toLowerCase()) || null);
+
+        // Fetch categories once per unique department referenced anywhere
+        // in the file, since Categories are department-scoped and each row
+        // can name a different department.
+        const uniqueDeptIds = Array.from(new Set(rowDeptIds.filter((id): id is string => !!id)));
+        const categoriesByDept = new Map<string, Map<string, string>>();
+        await Promise.all(
+          uniqueDeptIds.map(async (deptId) => {
+            try {
+              const res = await requestFn(`http://localhost:3000/departments/${deptId}/categories`, {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              const cats: TicketCategory[] = res.ok ? await res.json() : [];
+              categoriesByDept.set(deptId, new Map(cats.map((c) => [c.name.trim().toLowerCase(), c.id])));
+            } catch {
+              categoriesByDept.set(deptId, new Map());
+            }
+          })
+        );
+
+        requestorsPayload = normalizedRows
+          .map((r, idx) => {
+            const { name, email } = r;
+            if (!name || !email) {
+              parseSkips.push({ name, email, reason: "Missing name or email" });
+              return null;
+            }
+
+            const departmentId = rowDeptIds[idx];
+            if (!departmentId) {
+              parseSkips.push({ name, email, reason: `Unrecognized department: "${r.rawDepartments || "(blank)"}"` });
+              return null;
+            }
+
+            const windCategory = normalizeWindCategory(r.rawWindCategory);
+            if (!windCategory) {
+              parseSkips.push({ name, email, reason: "Missing or unrecognized WindCategory (use Wind, Non-Wind, or Both)" });
+              return null;
+            }
+
+            let state: string | null = null;
+            if (r.rawState) {
+              const matchedState = stateByName.get(r.rawState.toLowerCase());
+              if (!matchedState) {
+                parseSkips.push({ name, email, reason: `Unrecognized state: "${r.rawState}"` });
+                return null;
+              }
+              state = matchedState;
+            }
+
+            const catNames = r.rawCategories.split(/[,;|]/).map((c) => c.trim()).filter(Boolean);
+            if (catNames.length === 0) {
+              parseSkips.push({ name, email, reason: "Missing value in the Categories column" });
+              return null;
+            }
+
+            const deptCatMap = categoriesByDept.get(departmentId) || new Map<string, string>();
+            const categoryIds: string[] = [];
+            const unmatchedCats: string[] = [];
+            catNames.forEach((cn) => {
+              const id = deptCatMap.get(cn.toLowerCase());
+              if (id) categoryIds.push(id);
+              else unmatchedCats.push(cn);
+            });
+
+            if (unmatchedCats.length > 0) {
+              const deptName = departments.find((d) => d.id === departmentId)?.name || r.rawDepartments;
+              parseSkips.push({
+                name,
+                email,
+                reason: `Unrecognized categor${unmatchedCats.length > 1 ? "ies" : "y"} for "${deptName}": ${unmatchedCats.join(", ")}`,
+              });
+              return null;
+            }
+
+            return { name, email, departmentId, categoryIds, state, windCategory };
+          })
+          .filter((r): r is { name: string; email: string; departmentId: string; categoryIds: string[]; state: string | null; windCategory: WindCategory } => r !== null);
+      } else if (isExecutiveRole) {
+        requestorsPayload = normalizedRows
+          .map((r) => {
+            const { name, email } = r;
+            if (!name && !email) return null;
+
+            if (!r.rawDepartments) {
+              parseSkips.push({ name, email, reason: "Missing value in the Departments column" });
+              return null;
+            }
+
+            const deptNames = r.rawDepartments.split(/[,;|]/).map((d) => d.trim()).filter(Boolean);
+            const departmentIds: string[] = [];
+            const unmatched: string[] = [];
+            deptNames.forEach((dn) => {
+              const id = deptIdByName.get(dn.toLowerCase());
+              if (id) departmentIds.push(id);
+              else unmatched.push(dn);
+            });
+
+            if (unmatched.length > 0) {
+              parseSkips.push({ name, email, reason: `Unrecognized department name(s): ${unmatched.join(", ")}` });
+              return null;
+            }
+
+            return { name, email, departmentIds };
+          })
+          .filter((r): r is { name: string; email: string; departmentIds: string[] } => r !== null);
+      } else {
+        requestorsPayload = normalizedRows
+          .map((r) => (r.name || r.email ? { name: r.name, email: r.email } : null))
+          .filter((r): r is { name: string; email: string } => r !== null);
+      }
 
       if (requestorsPayload.length === 0) {
-        setError("No rows found in the uploaded file. Use the template and fill in Name + Email.");
+        if (parseSkips.length > 0) {
+          setBulkResult({
+            totalRows: rows.length,
+            createdCount: 0,
+            skippedCount: parseSkips.length,
+            skipped: parseSkips,
+          });
+          setError("No valid rows to invite - see the skipped rows below.");
+        } else {
+          const expectedCols = isExecutiveRole
+            ? " + Departments."
+            : isAgentRole
+            ? ", State, WindCategory, Department + Categories."
+            : ".";
+          setError(`No rows found in the uploaded file. Use the template and fill in Name + Email${expectedCols}`);
+        }
         return;
       }
 
@@ -281,6 +544,9 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
         role: inviteRole,
         requestors: requestorsPayload,
         departmentId: !isExecutiveRole ? (inviteDeptId || null) : null,
+        // Kept as a fallback only - each HOD/CXO row now carries its own
+        // departmentIds, and each AGENT row now carries its own
+        // departmentId/categoryIds/state/windCategory, resolved above.
         departmentIds: isExecutiveRole ? inviteDeptIds : [],
         categoryIds: !isExecutiveRole ? inviteCategoryIds : [],
         supportLevel: inviteRole == UserRole.AGENT ? SupportLevel.L1 : SupportLevel.L2,
@@ -300,8 +566,14 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || data.error || "Bulk invite failed");
 
-      setBulkResult(data);
-      setSuccess(`Bulk invite complete: ${data.createdCount} invited, ${data.skippedCount} skipped.`);
+      const merged = {
+        totalRows: rows.length,
+        createdCount: data.createdCount,
+        skippedCount: data.skippedCount + parseSkips.length,
+        skipped: [...parseSkips, ...data.skipped],
+      };
+      setBulkResult(merged);
+      setSuccess(`Bulk invite complete: ${merged.createdCount} invited, ${merged.skippedCount} skipped.`);
       fetchInvitations();
     } catch (err: any) {
       setError(err.message || "Failed to process the uploaded file");
@@ -599,7 +871,11 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
 
           <div className="mt-4 pt-4 border-t border-zinc-100">
             <p className="text-[11px] text-zinc-500 mb-2">
-              Or invite many people at once with this same Role{!isExecutiveRole && inviteRole !== UserRole.REQUESTER ? " / Department / Category" : isExecutiveRole ? " / Department" : ""} setting:
+              {isExecutiveRole
+                ? "Or invite many people at once as this Role - the Departments column in the uploaded file sets each person's own department(s):"
+                : isAgentRole
+                ? "Or invite many agents at once - the State, WindCategory, Department, and Categories columns in the uploaded file set each agent's own values:"
+                : `Or invite many people at once with this same Role${inviteRole !== UserRole.REQUESTER ? " / Department / Category" : ""} setting:`}
             </p>
             <div className="relative">
               <button
@@ -623,7 +899,13 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
                       <FileDown size={16} className="text-zinc-500 mt-0.5" />
                       <span>
                         <span className="block text-xs font-semibold text-zinc-900">Download template</span>
-                        <span className="block text-[11px] text-zinc-500">Excel file with Name + Email columns</span>
+                        <span className="block text-[11px] text-zinc-500">
+                          {isExecutiveRole
+                            ? "Excel file with Name, Email + Departments columns"
+                            : isAgentRole
+                            ? "Excel file with Name, Email, State, WindCategory, Department + Categories columns"
+                            : "Excel file with Name + Email columns"}
+                        </span>
                       </span>
                     </button>
                     <button
@@ -680,3 +962,4 @@ export const InvitationComponent: React.FC<InvitationComponentProps> = ({
     </div>
   );
 };
+

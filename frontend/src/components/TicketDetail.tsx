@@ -1144,7 +1144,7 @@ export default function TicketDetail({ ticketId, token, currentUser, onBack,metr
                     onClick={() => setShowEscalateForm(!showEscalateForm)}
                     className="w-full bg-[#032d26] hover:bg-[#021f1a] text-white text-xs font-semibold py-2 cursor-pointer flex justify-center items-center gap-1"
                   >
-                    <TrendingUp size={14} /> Promote The Ticket
+                    <TrendingUp size={14} /> Escalate the ticket
                   </button>
                 )
               }
