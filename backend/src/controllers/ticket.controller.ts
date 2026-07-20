@@ -603,6 +603,123 @@ export const ticketController = {
     res.json(ticket);
   },
 
+  // PATCH /tickets/:id/edit  (GLOBAL_ADMIN only)
+  //
+  // Full edit of the ticket's own fields - separate from PATCH /tickets/:id,
+  // which only ever drives status transitions (and from /priority, which
+  // is its own dedicated override flow). Every field here is optional in
+  // the body; only whatever is actually sent gets updated, so a global
+  // admin can correct a single typo'd field without having to resend the
+  // whole ticket.
+  async editTicket(req: AuthedRequest, res: Response) {
+    const {
+      title,
+      description,
+      clientName,
+      clientEmail,
+      representative,
+      employeeId,
+      dateOfOccurance,
+      site,
+      state,
+      designation,
+      departmentId,
+      categoryId,
+      projectId,
+    } = req.body;
+
+    await prisma.ticket.findUniqueOrThrow({ where: { id: req.params.id } });
+
+    const data: Record<string, unknown> = {};
+
+    if (title !== undefined) {
+      if (typeof title !== "string" || !title.trim()) {
+        throw new AppError("Title cannot be empty", 400);
+      }
+      data.title = title.trim();
+    }
+    if (description !== undefined) data.description = description === null ? null : String(description);
+    if (clientName !== undefined) {
+      if (typeof clientName !== "string" || !clientName.trim()) {
+        throw new AppError("Client name cannot be empty", 400);
+      }
+      data.clientName = clientName.trim();
+    }
+    if (clientEmail !== undefined) {
+      if (typeof clientEmail !== "string" || !clientEmail.trim()) {
+        throw new AppError("Client email cannot be empty", 400);
+      }
+      data.clientEmail = clientEmail.trim();
+    }
+    if (representative !== undefined) data.representative = representative;
+    if (employeeId !== undefined) data.employeeId = employeeId;
+    if (dateOfOccurance !== undefined) {
+      const parsed = new Date(dateOfOccurance);
+      if (Number.isNaN(parsed.getTime())) throw new AppError("Invalid dateOfOccurance", 400);
+      data.dateOfOccurance = parsed;
+    }
+    if (site !== undefined) {
+      if (typeof site !== "string" || !site.trim()) {
+        throw new AppError("Site cannot be empty", 400);
+      }
+      data.site = site.trim();
+    }
+    if (state !== undefined) data.state = state;
+    if (designation !== undefined) data.designation = designation;
+
+    // Cross-entity references are validated so a typo'd id doesn't silently
+    // fail the FK constraint with an opaque 500 later.
+    if (departmentId !== undefined) {
+      const department = await prisma.department.findUnique({ where: { id: departmentId } });
+      if (!department) throw new AppError("Department not found", 400);
+      data.departmentId = departmentId;
+    }
+    if (categoryId !== undefined) {
+      if (categoryId === null) {
+        data.categoryId = null;
+      } else {
+        const category = await prisma.ticketCategory.findUnique({ where: { id: categoryId } });
+        if (!category) throw new AppError("Category not found", 400);
+        data.categoryId = categoryId;
+      }
+    }
+    if (projectId !== undefined) {
+      if (projectId === null) {
+        data.projectId = null;
+      } else {
+        const project = await prisma.project.findUnique({ where: { id: projectId } });
+        if (!project) throw new AppError("Project not found", 400);
+        data.projectId = projectId;
+      }
+    }
+
+    if (Object.keys(data).length === 0) {
+      throw new AppError("No editable fields were provided", 400);
+    }
+
+    const ticket = await prisma.ticket.update({
+      where: { id: req.params.id },
+      data,
+      include: {
+        assignee: true,
+        department: { select: { id: true, name: true } },
+        requester: { select: { id: true, fullName: true, email: true } },
+        category: true,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user!.id,
+        action: "TICKET_EDITED",
+        entityType: "Ticket",
+        entityId: ticket.id,
+      },
+    });
+
+    res.json(ticket);
+  },
+
   // PATCH /tickets/:id/priority  { priority }  (GLOBAL_ADMIN, DEPT_ADMIN only)
   // Manual override of the system-computed priority. internalPriority is a
   // separately-computed triage metric (see internalPriority.service.ts) and
@@ -706,4 +823,3 @@ export const ticketController = {
     res.status(204).send();
   },
 };
-
